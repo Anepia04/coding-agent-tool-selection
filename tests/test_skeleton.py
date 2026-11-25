@@ -23,8 +23,8 @@ from agent.llm_client import LLMClient, LLMResponse, ToolCall
 from agent.task_analyzer import TaskAnalyzer, TaskInfo
 from experiments import adaptive_topk, baseline, evaluate, fixed_topk
 from experiments.schemas import RESULT_CSV_FIELDS, ExperimentConfig, ExperimentResult
-from retrieval.adaptive_selector import AdaptiveSelector, SelectionConfig
-from retrieval.tfidf_retriever import RetrievedTool, TFIDFRetriever
+from retrieval.adaptive_selector import AdaptiveSelector
+from retrieval.tfidf_retriever import RetrievedTool
 from tools.definitions import EXAMPLE_TOOL_DEFINITIONS, ToolDefinition
 from tools.registry import ToolRegistry, build_default_registry
 
@@ -182,20 +182,9 @@ class TestFrameworkSkeleton(unittest.TestCase):
         task_analyzer = TaskAnalyzer(llm_client=None)
         registry = build_default_registry()
         controller = AgentController(llm_client, task_analyzer, registry)
-        retriever = TFIDFRetriever()
-        selector = AdaptiveSelector(SelectionConfig())
         exp_result = ExperimentResult(task_id="task_001", experiment_mode="baseline")
 
         cases = {
-            "LLMClient.chat": lambda: llm_client.chat([{"role": "user", "content": "hi"}]),
-            "TaskAnalyzer.analyze": lambda: task_analyzer.analyze("修复 bug"),
-            "AgentController.run": lambda: controller.run({"task_id": "task_001"}, mode="baseline"),
-            "AgentController._select_tools": lambda: controller._select_tools(
-                TaskInfo(task_id="t", description="d"), "baseline"
-            ),
-            "TFIDFRetriever.fit": lambda: retriever.fit(EXAMPLE_TOOL_DEFINITIONS),
-            "TFIDFRetriever.retrieve": lambda: retriever.retrieve("修复 bug"),
-            "AdaptiveSelector.select": lambda: selector.select([]),
             "run_baseline": lambda: baseline.run_baseline(controller, {"task_id": "task_001"}),
             "run_fixed_topk": lambda: fixed_topk.run_fixed_topk(
                 controller, {"task_id": "task_001"}, top_k=3
