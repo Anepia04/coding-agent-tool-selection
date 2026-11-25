@@ -1,9 +1,9 @@
 # 当前阶段必需依赖
 scikit-learn>=1.3.0    # 成员 A：TF-IDF 向量化与 Cosine Similarity（自动安装 numpy / scipy 等）
 openai>=1.0.0          # 成员 A：LLMClient 对接 OpenAI 兼容接口（Qwen / DeepSeek 等）
+python-dotenv>=1.0.0   # 成员 A：自动加载项目根目录 .env（API Key 等敏感配置）
 
 # 后续实现具体功能时，再按下表启用对应依赖（取消注释并安装）：
 #
-# python-dotenv>=1.0.0   # 成员 A：从 .env 加载环境变量
 # pandas>=2.0.0          # 成员 D：实验结果统计
 # matplotlib>=3.8.0      # 成员 D：实验结果可视化
