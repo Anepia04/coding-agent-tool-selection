@@ -1,0 +1,29 @@
+[
+  {
+    "task_id": "task_001",
+    "description": "修复 sample_project 中 calculator.py 的除零异常，并补充覆盖该场景的单元测试。",
+    "project_path": "workspace/sample_project",
+    "language": "python",
+    "task_type": "bug_fix",
+    "complexity": "simple",
+    "success_criteria": "全部单元测试通过；除零场景返回明确的错误提示而不是直接崩溃。"
+  },
+  {
+    "task_id": "task_002",
+    "description": "为 sample_project 的文本工具模块新增 slugify 函数，并补充对应的单元测试。",
+    "project_path": "workspace/sample_project",
+    "language": "python",
+    "task_type": "feature_add",
+    "complexity": "medium",
+    "success_criteria": "slugify 函数实现符合描述；新增测试通过；原有测试不被破坏。"
+  },
+  {
+    "task_id": "task_003",
+    "description": "重构 sample_project 的数据加载模块，拆分过长函数并消除重复代码，保持现有测试全部通过。",
+    "project_path": "workspace/sample_project",
+    "language": "python",
+    "task_type": "refactor",
+    "complexity": "complex",
+    "success_criteria": "重构后公共接口行为不变；全部测试通过；函数复杂度下降。"
+  }
+]

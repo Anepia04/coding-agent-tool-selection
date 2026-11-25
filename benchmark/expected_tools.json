@@ -1,0 +1,17 @@
+[
+  {
+    "task_id": "task_001",
+    "required_tools": ["read_file", "search_code", "write_file", "run_tests"],
+    "optional_tools": ["list_files", "git_diff"]
+  },
+  {
+    "task_id": "task_002",
+    "required_tools": ["read_file", "write_file", "run_tests"],
+    "optional_tools": ["list_files", "search_code", "git_diff"]
+  },
+  {
+    "task_id": "task_003",
+    "required_tools": ["read_file", "search_code", "write_file", "run_tests"],
+    "optional_tools": ["list_files", "git_diff", "run_command"]
+  }
+]
