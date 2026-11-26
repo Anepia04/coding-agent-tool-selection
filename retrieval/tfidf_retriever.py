@@ -192,6 +192,9 @@ class TFIDFRetriever:
             definition.category,
             definition.description,
         ]
+        hints = getattr(definition, "search_hints", None) or []
+        if hints:
+            parts.append(" ".join(str(hint) for hint in hints))
         return " ".join(str(part) for part in parts if part)
 
     @staticmethod

@@ -27,12 +27,15 @@
 
 from __future__ import annotations
 
+import ast
 import logging
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from importlib.util import find_spec
 from pathlib import Path
@@ -1125,13 +1128,496 @@ def apply_patch(patch: str) -> Dict[str, Any]:
     return {"applied": True, "affected_files": affected, "file_count": len(affected)}
 
 
+# ---------------------------------------------------------------------------
+# 工具：增量编辑与文件管理
+# ---------------------------------------------------------------------------
+
+def edit_file(
+    path: str,
+    old_string: str,
+    new_string: str,
+    replace_all: bool = False,
+) -> str:
+    """把文件中的一段旧文本精确替换为新文本。
+
+    与 ``write_file`` 的区别：只改片段，不需要重写整个文件；与 ``apply_patch``
+    的区别：不需要构造 unified diff。旧文本必须在文件中唯一匹配，否则拒绝执行，
+    避免误改到不该改的位置。
+
+    Args:
+        path: 相对工作目录的文件路径。
+        old_string: 要被替换的原文片段（需唯一匹配）。
+        new_string: 替换后的新文本。
+        replace_all: 为 True 时替换所有匹配；默认 False（多处匹配则报错）。
+
+    Returns:
+        替换结果说明。
+
+    Raises:
+        TypeError: ``new_string`` 不是字符串。
+        ValueError: 参数为空、新旧文本相同、找不到旧文本，或多处匹配但未允许全部替换。
+        FileNotFoundError: 目标文件不存在。
+        IsADirectoryError: 目标是目录。
+    """
+    if not isinstance(old_string, str) or not old_string:
+        raise ValueError("old_string 不能为空")
+    if not isinstance(new_string, str):
+        raise TypeError(f"new_string 必须是字符串，当前为 {type(new_string).__name__}")
+    if old_string == new_string:
+        raise ValueError("old_string 与 new_string 相同，无需修改")
+
+    target = _resolve_relative(path, must_exist=True, expect_dir=False)
+    content = _read_text_file(target, label=f"文件 {path!r}", max_bytes=MAX_WRITE_BYTES)
+
+    # 兼容 CRLF 文件：先归一化为 LF 再匹配，写回时恢复原换行风格
+    used_crlf = "\r\n" in content
+    normalized = content.replace("\r\n", "\n") if used_crlf else content
+
+    count = normalized.count(old_string)
+    if count == 0:
+        raise ValueError(
+            f"在 {path!r} 中找不到 old_string 片段，无法替换。"
+            f"请先用 read_file 或 search_code 确认片段原文（含缩进与空白）。"
+        )
+    if count > 1 and not replace_all:
+        raise ValueError(
+            f"old_string 在 {path!r} 中出现 {count} 次，无法确定替换位置。"
+            f"请提供更长的唯一片段，或显式设置 replace_all=True。"
+        )
+
+    updated = normalized.replace(old_string, new_string)
+    encoded = updated.encode("utf-8")
+    if len(encoded) > MAX_WRITE_BYTES:
+        raise ValueError(
+            f"替换后内容过大：{len(encoded)} 字节，超过上限 {MAX_WRITE_BYTES} 字节"
+        )
+    if used_crlf:
+        updated = updated.replace("\n", "\r\n")
+
+    try:
+        with open(target, "w", encoding="utf-8", newline="") as handle:
+            handle.write(updated)
+    except OSError as exc:
+        raise OSError(f"写入失败: {path!r}（{exc}）") from exc
+
+    replaced = count if replace_all else 1
+    logger.info("已在 %s 中替换 %d 处", path, replaced)
+    return f"已在 {path} 中替换 {replaced} 处（{len(old_string)} → {len(new_string)} 字符）"
+
+
+def file_info(path: str) -> Dict[str, Any]:
+    """查看文件或目录的属性。
+
+    Args:
+        path: 相对工作目录的文件或目录路径。
+
+    Returns:
+        ``{"path", "type", "size_bytes", "mtime", "is_text", "lines"}``；
+        目录额外包含 ``entries``（直接子项数量）。
+    """
+    root = _workspace_root()
+    target = _resolve_relative(path, must_exist=True)
+    try:
+        stat_result = target.stat()
+    except OSError as exc:
+        raise OSError(f"无法读取属性: {path!r}（{exc}）") from exc
+
+    info: Dict[str, Any] = {
+        "path": _relative_display(target, root),
+        "type": "dir" if target.is_dir() else "file",
+        "size_bytes": stat_result.st_size,
+        "mtime": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat_result.st_mtime)),
+        "is_text": False,
+        "lines": None,
+    }
+
+    if target.is_dir():
+        try:
+            info["entries"] = len(list(target.iterdir()))
+        except OSError:
+            info["entries"] = None
+        return info
+
+    try:
+        data = target.read_bytes()
+    except OSError as exc:
+        raise OSError(f"读取失败: {path!r}（{exc}）") from exc
+    if b"\x00" in data:
+        return info
+    text = data.decode("utf-8", errors="replace")
+    info["is_text"] = True
+    info["lines"] = len(text.splitlines())
+    return info
+
+
+def delete_path(path: str) -> str:
+    """删除文件或空目录。
+
+    为避免误删，只允许删除空目录；工作目录根本身不可删除。
+
+    Args:
+        path: 相对工作目录的文件或空目录路径。
+
+    Returns:
+        删除结果说明。
+
+    Raises:
+        FileNotFoundError: 目标不存在。
+        PermissionError: 试图删除工作目录根。
+        OSError: 目录非空，或删除失败。
+    """
+    root = _workspace_root()
+    target = _resolve_relative(path, must_exist=True)
+    if os.path.normcase(str(target)) == os.path.normcase(str(root)):
+        raise PermissionError("不能删除工作目录本身")
+
+    if target.is_dir():
+        try:
+            target.rmdir()  # 只删空目录
+        except OSError as exc:
+            raise OSError(
+                f"目录非空或无法删除: {path!r}，请先删除其中文件（{exc}）"
+            ) from exc
+        logger.info("已删除空目录 %s", path)
+        return f"已删除空目录 {path}"
+
+    try:
+        target.unlink()
+    except OSError as exc:
+        raise OSError(f"删除文件失败: {path!r}（{exc}）") from exc
+    logger.info("已删除文件 %s", path)
+    return f"已删除文件 {path}"
+
+
+def move_path(source: str, destination: str, overwrite: bool = False) -> str:
+    """重命名或移动文件与目录。
+
+    Args:
+        source: 原路径（相对工作目录，必须存在）。
+        destination: 目标路径（相对工作目录，父目录会自动创建）。
+        overwrite: 目标已存在时是否覆盖。
+
+    Returns:
+        移动结果说明。
+
+    Raises:
+        FileNotFoundError: 源路径不存在。
+        FileExistsError: 目标已存在且未允许覆盖。
+        PermissionError: 试图移动工作目录根。
+        ValueError: 源与目标相同。
+    """
+    root = _workspace_root()
+    src = _resolve_relative(source, field_name="source", must_exist=True)
+    dst = _resolve_relative(destination, field_name="destination", create_root=True)
+
+    if os.path.normcase(str(src)) == os.path.normcase(str(root)):
+        raise PermissionError("不能移动工作目录本身")
+    if os.path.normcase(str(src)) == os.path.normcase(str(dst)):
+        raise ValueError("source 与 destination 相同，无需移动")
+
+    if dst.exists():
+        if not overwrite:
+            raise FileExistsError(
+                f"目标已存在: {destination!r}，如需覆盖请显式传入 overwrite=True。"
+            )
+        try:
+            if dst.is_dir():
+                shutil.rmtree(dst)
+            else:
+                dst.unlink()
+        except OSError as exc:
+            raise OSError(f"清理目标路径失败: {destination!r}（{exc}）") from exc
+
+    try:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(src), str(dst))
+    except OSError as exc:
+        raise OSError(f"移动失败: {source!r} -> {destination!r}（{exc}）") from exc
+
+    logger.info("已移动 %s -> %s", source, destination)
+    return f"已把 {source} 移动到 {_relative_display(dst, root)}"
+
+
+# ---------------------------------------------------------------------------
+# 工具：符号导航与标记扫描
+# ---------------------------------------------------------------------------
+
+def _iter_source_files(base: Path, root: Path, pattern: str) -> List[Path]:
+    """遍历匹配的源码文件，跳过忽略目录、越界项与超过数量上限的部分。"""
+    iterator = base.glob(pattern) if pattern.startswith("**/") else base.rglob(pattern)
+    files: List[Path] = []
+    for entry in iterator:
+        if len(files) >= MAX_LISTED_FILES:
+            break
+        if _skip_entry(entry, root) or not entry.is_file():
+            continue
+        files.append(entry)
+    return files
+
+
+def find_symbol(
+    name: str = "",
+    directory: str = ".",
+    file_pattern: str = "*.py",
+) -> List[Dict[str, Any]]:
+    """列出源码中的函数与类定义。
+
+    与 ``search_code`` 的区别：这里做语法解析而不是文本搜索，因此能准确区分
+    「定义一个函数」和「调用一个函数」。
+
+    Args:
+        name: 按符号名过滤（大小写不敏感的子串匹配），为空时列出全部。
+        directory: 搜索起始目录（相对工作目录）。
+        file_pattern: 限定文件类型，默认 ``*.py``。
+
+    Returns:
+        命中列表，元素为 ``{"name", "kind", "path", "line", "end_line"}``，
+        按路径与行号排序；超过 ``MAX_SEARCH_HITS`` 条时末尾追加一条
+        ``path="<truncated>"`` 的哨兵记录。
+    """
+    root = _workspace_root()
+    base = _resolve_relative(directory, field_name="directory", must_exist=True)
+    if not base.is_dir():
+        raise NotADirectoryError(f"directory 必须是目录: {directory!r}")
+    pattern = _normalize_glob(file_pattern, name="file_pattern")
+    keyword = str(name or "").strip().lower()
+
+    hits: List[Dict[str, Any]] = []
+    truncated = False
+    for entry in _iter_source_files(base, root, pattern):
+        try:
+            source = entry.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        try:
+            tree = ast.parse(source, filename=str(entry))
+        except SyntaxError:
+            continue
+        relative = _relative_display(entry, root)
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue
+            if keyword and keyword not in node.name.lower():
+                continue
+            hits.append(
+                {
+                    "name": node.name,
+                    "kind": "class" if isinstance(node, ast.ClassDef) else "function",
+                    "path": relative,
+                    "line": node.lineno,
+                    "end_line": getattr(node, "end_lineno", None),
+                }
+            )
+            if len(hits) >= MAX_SEARCH_HITS:
+                truncated = True
+                break
+        if truncated:
+            break
+
+    hits.sort(key=lambda item: (item["path"], item["line"]))
+    if truncated:
+        logger.warning("find_symbol 命中超过 %s 条，结果已截断", MAX_SEARCH_HITS)
+        hits.append(
+            {
+                "name": "<truncated>",
+                "kind": "",
+                "path": "<truncated>",
+                "line": 0,
+                "end_line": None,
+            }
+        )
+    return hits
+
+
+#: 未完成标记（TODO / FIXME / XXX / HACK）
+_TODO_PATTERN = re.compile(r"\b(TODO|FIXME|XXX|HACK)\b", re.IGNORECASE)
+
+
+def list_todos(directory: str = ".", file_pattern: str = "*.py") -> List[Dict[str, Any]]:
+    """扫描源码中的 TODO、FIXME 等未完成标记。
+
+    Args:
+        directory: 搜索起始目录（相对工作目录）。
+        file_pattern: 限定文件类型，默认 ``*.py``。
+
+    Returns:
+        命中列表，元素为 ``{"path", "line", "marker", "content"}``；
+        超过 ``MAX_SEARCH_HITS`` 条时末尾追加 ``path="<truncated>"`` 的哨兵记录。
+    """
+    root = _workspace_root()
+    base = _resolve_relative(directory, field_name="directory", must_exist=True)
+    if not base.is_dir():
+        raise NotADirectoryError(f"directory 必须是目录: {directory!r}")
+    pattern = _normalize_glob(file_pattern, name="file_pattern")
+
+    hits: List[Dict[str, Any]] = []
+    truncated = False
+    for entry in _iter_source_files(base, root, pattern):
+        try:
+            text = entry.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        relative = _relative_display(entry, root)
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            match = _TODO_PATTERN.search(line)
+            if not match:
+                continue
+            snippet = line.strip()
+            if len(snippet) > MAX_SEARCH_LINE_CHARS:
+                snippet = snippet[:MAX_SEARCH_LINE_CHARS] + "..."
+            hits.append(
+                {
+                    "path": relative,
+                    "line": line_no,
+                    "marker": match.group(1).upper(),
+                    "content": snippet,
+                }
+            )
+            if len(hits) >= MAX_SEARCH_HITS:
+                truncated = True
+                break
+        if truncated:
+            break
+
+    if truncated:
+        logger.warning("list_todos 命中超过 %s 条，结果已截断", MAX_SEARCH_HITS)
+        hits.append(
+            {
+                "path": "<truncated>",
+                "line": 0,
+                "marker": "",
+                "content": f"命中超过 {MAX_SEARCH_HITS} 条，仅返回前 {MAX_SEARCH_HITS} 条",
+            }
+        )
+    return hits
+
+
+# ---------------------------------------------------------------------------
+# 工具：语法检查与 Git 状态
+# ---------------------------------------------------------------------------
+
+def check_syntax(path: str = ".", file_pattern: str = "*.py") -> Dict[str, Any]:
+    """对源码做语法检查，报告无法解析的文件与错误位置。
+
+    Args:
+        path: 文件或目录路径（相对工作目录），默认检查整个工作目录。
+        file_pattern: 当 ``path`` 是目录时限定文件类型，默认 ``*.py``。
+
+    Returns:
+        ``{"ok", "checked", "error_count",
+        "errors": [{"path", "line", "offset", "message", "text"}]}``。
+    """
+    root = _workspace_root()
+    target = _resolve_relative(path, field_name="path", must_exist=True)
+    pattern = _normalize_glob(file_pattern, name="file_pattern")
+
+    files = [target] if target.is_file() else _iter_source_files(target, root, pattern)
+
+    errors: List[Dict[str, Any]] = []
+    checked = 0
+    for entry in files:
+        try:
+            source = entry.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        checked += 1
+        try:
+            compile(source, str(entry), "exec")
+        except SyntaxError as exc:
+            text = (exc.text or "").strip()
+            errors.append(
+                {
+                    "path": _relative_display(entry, root),
+                    "line": exc.lineno,
+                    "offset": exc.offset,
+                    "message": exc.msg,
+                    "text": text[:200],
+                }
+            )
+
+    if errors:
+        logger.info("语法检查发现 %d 个问题（共检查 %d 个文件）", len(errors), checked)
+    return {
+        "ok": not errors,
+        "checked": checked,
+        "error_count": len(errors),
+        "errors": errors[:MAX_SEARCH_HITS],
+    }
+
+
+def git_status() -> Dict[str, Any]:
+    """查看仓库工作区状态。
+
+    返回 ``git status --porcelain`` 的解析结果，范围限定在工作目录子树内
+    （工作区可能位于外层仓库内部）。
+
+    Returns:
+        ``{"clean", "count", "entries": [{"status", "path"}], "truncated"}``。
+
+    Raises:
+        RuntimeError: 工作目录不在 Git 仓库内，或 git 执行失败。
+    """
+    root = _workspace_root()
+    probe = _run_process(
+        ["git", "rev-parse", "--is-inside-work-tree"],
+        cwd=root,
+        timeout=DEFAULT_TIMEOUT_SECONDS,
+        label="git_status(probe)",
+    )
+    if probe["returncode"] != 0 or "true" not in probe["stdout"].lower():
+        raise RuntimeError(
+            f"工作目录不是 Git 仓库，无法查看状态: {root}。"
+            f"请在该任务工作区执行 git init，或改用其他方式确认改动。"
+        )
+
+    result = _run_process(
+        ["git", "status", "--porcelain", "--", "."],
+        cwd=root,
+        timeout=DEFAULT_TIMEOUT_SECONDS,
+        label="git_status",
+    )
+    if result["timed_out"]:
+        raise RuntimeError("git status 执行超时")
+    if result["returncode"] != 0:
+        raise RuntimeError(
+            f"git status 执行失败（{result['returncode']}）：{result['stderr'].strip()}"
+        )
+
+    entries: List[Dict[str, str]] = []
+    truncated = False
+    for line in result["stdout"].splitlines():
+        if not line.strip():
+            continue
+        if len(entries) >= MAX_LISTED_FILES:
+            truncated = True
+            break
+        code = line[:2].strip() or "?"
+        path_text = line[3:].strip() if len(line) > 3 else ""
+        entries.append({"status": code, "path": path_text})
+
+    return {
+        "clean": not entries,
+        "count": len(entries),
+        "entries": entries,
+        "truncated": truncated,
+    }
+
+
 __all__ = [
     "read_file",
     "write_file",
     "list_files",
     "search_code",
+    "find_symbol",
+    "list_todos",
+    "file_info",
+    "edit_file",
+    "delete_path",
+    "move_path",
     "run_tests",
+    "check_syntax",
     "run_command",
+    "git_status",
     "git_diff",
     "apply_patch",
     "configure_workspace",
