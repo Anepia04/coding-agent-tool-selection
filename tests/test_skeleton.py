@@ -27,6 +27,7 @@ from retrieval.adaptive_selector import AdaptiveSelector
 from retrieval.tfidf_retriever import RetrievedTool
 from tools.definitions import EXAMPLE_TOOL_DEFINITIONS, ToolDefinition
 from tools.registry import ToolRegistry, build_default_registry
+from tools.implementations import set_workspace_root
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -170,8 +171,17 @@ class TestFrameworkSkeleton(unittest.TestCase):
 
         # 示例工具实现尚未完成，必须明确抛出 NotImplementedError
         default_registry = build_default_registry()
-        with self.assertRaises(NotImplementedError):
-            default_registry.execute_tool("read_file", {"path": "a.py"})
+        workspace = PROJECT_ROOT / "workspace"
+        workspace.mkdir(exist_ok=True)
+        (workspace / "a.py").write_text("print('ok')\n", encoding="utf-8")
+        set_workspace_root(workspace)
+        try:
+            self.assertEqual(
+                default_registry.execute_tool("read_file", {"path": "a.py"}),
+                "print('ok')",
+            )
+        finally:
+            set_workspace_root(None)
 
     # ------------------------------------------------------------------
     # 未实现接口必须明确报错
