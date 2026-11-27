@@ -2,10 +2,10 @@
 
 ## 1. Ownership boundaries
 
-- Member A: `agent/`, `retrieval/`, and `config.py`. Owns the agent framework, task analysis, retrieval, selection, and cross-module interfaces.
-- Member B: `tools/` and `benchmark/`. Owns tool definitions, implementations, workspaces, and expected-tool labels.
-- Member C: `experiments/`. Owns experiment entry points, task acceptance, and metric calculation.
-- Member D: `results/`, `docs/`, and `demo/`. Owns aggregation, visualization, and presentation material.
+- Member A builds and maintains `agent/`, `retrieval/`, and `config.py`. This includes the agent loop, task analysis, tool retrieval, tool selection, and shared interfaces.
+- Member B builds and maintains `tools/` and `benchmark/`. This includes the tool definitions and implementations, benchmark workspaces, and expected-tool labels.
+- Member C builds and runs the experiments in `experiments/`. This includes the three experiment modes, task acceptance checks, and metric calculation.
+- Member D analyzes the experiment results and prepares the charts, demo, and presentation material in `results/`, `docs/`, and `demo/`.
 
 ## 2. Agent data flow
 
@@ -54,7 +54,7 @@ input_tokens, output_tokens, total_tokens, execution_time,
 tool_call_count, error_message, termination_reason
 ```
 
-`task_success` describes whether the agent flow completed without a controller-level error. It is not the final benchmark acceptance result. Member C's evaluation layer owns task acceptance.
+`task_success` describes whether the agent flow completed without a controller-level error. It is not the final benchmark acceptance result. The experiment evaluation code maintained by Member C decides whether the benchmark task passed.
 
 ## 4. Loop and error behavior
 

@@ -4,7 +4,7 @@ A research prototype for task-aware tool selection in a lightweight Python codin
 
 ## Current status
 
-Member A owns the agent framework and retrieval layer:
+Member A builds and maintains the agent framework and retrieval layer:
 
 - `agent/`: `LLMClient`, `TaskAnalyzer`, `AgentController`, and multi-turn tool calling.
 - `retrieval/`: TF-IDF, cosine similarity, Fixed Top-K, and Adaptive Top-K.
@@ -12,7 +12,7 @@ Member A owns the agent framework and retrieval layer:
 - `AgentRunResult` records selected tools, execution steps, token usage, duration, tool calls, errors, and termination reason.
 - A complete benchmark mapping can be converted directly to `TaskInfo`, so the three modes share the same task analysis.
 
-Member B owns `tools/` and `benchmark/`. Member C owns `experiments/` and evaluation. Member D owns result analysis, visualization, and presentation material.
+Member B builds and maintains the tool library and benchmark tasks in `tools/` and `benchmark/`. Member C writes and runs the experiments and implements the evaluation metrics in `experiments/`. Member D analyzes the results and prepares the charts, demo, and presentation materials.
 
 ## Experiment modes
 
