@@ -8,7 +8,7 @@
 负责成员：成员 B
 """
 
-from .definitions import EXAMPLE_TOOL_DEFINITIONS, ToolDefinition
+from .definitions import *
 from .registry import ToolRegistry, ToolImplementation, build_default_registry
 
 __all__ = [
