@@ -7,7 +7,7 @@
     "task_type": "bug_fix",
     "complexity": "simple",
     "success_criteria": "全部单元测试通过；除零场景返回明确的错误提示而不是直接崩溃。",
-    "retrieval_query": "sample_project calculator.py 除零异常 修复 读取代码 定位除法逻辑 添加异常处理 编写单元测试 覆盖除零场景 运行测试 验证结果",
+    "retrieval_query": "修复 sample_project calculator.py 除零异常 读取计算器代码 定位除法逻辑 修改除法处理 编写单元测试 覆盖除零场景 运行测试 验证结果",
     "negative_constraints": []
   },
   {
@@ -18,130 +18,132 @@
     "task_type": "feature_add",
     "complexity": "medium",
     "success_criteria": "slugify 函数实现符合描述；新增测试通过；原有测试不被破坏。",
-    "retrieval_query": "sample_project 文本工具模块 slugify 函数 新增 单元测试 读取文本工具模块 定位文本工具模块 设计 slugify 实现 编写单元测试 运行测试 验证测试",
+    "retrieval_query": "sample_project 文本工具模块 slugify 函数 新增 单元测试 定位模块 读取代码 实现函数 编写测试 运行测试 验证结果",
     "negative_constraints": []
   },
   {
     "task_id": "task_003",
-    "description": "重构 sample_project 的数据加载模块，拆分过长函数并消除重复代码，保持现有测试全部通过。",
+    "description": "重构 sample_project 的数据加载模块：先定位过长函数与重复代码，再拆分并消除重复，保持现有测试全部通过。",
     "project_path": "benchmark/workspaces/task_003",
     "language": "python",
     "task_type": "refactor",
     "complexity": "complex",
     "success_criteria": "重构后公共接口行为不变；全部测试通过；函数复杂度下降。",
-    "retrieval_query": "数据加载模块 重构 拆分过长函数 消除重复代码 读取现有代码 分析函数结构 提取公共逻辑 调整模块实现 运行现有测试 验证测试通过",
-    "negative_constraints": []
+    "retrieval_query": "数据加载模块 过长函数 重复代码 定位 分析 拆分函数 消除重复 修改代码 运行测试 验证测试通过",
+    "negative_constraints": [
+      "不破坏现有测试通过状态"
+    ]
   },
   {
     "task_id": "task_004",
-    "description": "运行 sample_project 的测试套件，定位唯一失败用例的根因并修复，使其通过。",
+    "description": "运行 sample_project 的测试套件，查找并定位唯一失败用例的根因后修复，使其通过。",
     "project_path": "benchmark/workspaces/task_004",
     "language": "python",
     "task_type": "bug_fix",
     "complexity": "medium",
     "success_criteria": "所有测试通过；失败用例对应的缺陷被修复而不是被删除或跳过。",
-    "retrieval_query": "sample_project 测试套件 运行 测试输出 失败用例 定位 根因 相关代码 修复代码 重新运行测试 验证通过",
+    "retrieval_query": "sample_project 测试套件 运行 测试输出 失败用例 根因 定位 相关代码 阅读 代码 修复 回归测试 验证 通过",
     "negative_constraints": []
   },
   {
     "task_id": "task_005",
-    "description": "删除 sample_project 中已废弃的 legacy_io 模块，并同步清理所有引用它的代码。",
+    "description": "删除 sample_project 中已废弃的 legacy_io 模块，先查找并同步清理所有引用它的代码，清理后运行测试确认其余用例仍全部通过。",
     "project_path": "benchmark/workspaces/task_005",
     "language": "python",
     "task_type": "refactor",
     "complexity": "medium",
     "success_criteria": "legacy_io 模块及其测试被删除；代码中不再有对它的引用；其余测试全部通过。",
-    "retrieval_query": "sample_project legacy_io 定位 模块 查找 引用 删除 模块 清理 导入 移除 调用 更新 依赖 验证 构建 测试",
+    "retrieval_query": "sample_project legacy_io 模块 查找 引用 读取文件 搜索导入 删除模块 清理引用 更新代码 运行测试 确认测试通过",
     "negative_constraints": []
   },
   {
     "task_id": "task_006",
-    "description": "为 sample_project 的 calculator 模块中缺失 docstring 的公共函数补充文档注释。",
+    "description": "为 sample_project 的 calculator 模块中缺失 docstring 的公共函数补充文档注释，并确认现有测试仍然通过。",
     "project_path": "benchmark/workspaces/task_006",
     "language": "python",
     "task_type": "doc",
     "complexity": "simple",
     "success_criteria": "每个公共函数都有说明用途、参数与返回值的 docstring；全部测试通过。",
-    "retrieval_query": "sample_project calculator 模块 公共函数 docstring 定位 识别 检查 补充 文档注释 校验语法",
+    "retrieval_query": "sample_project calculator 模块 公共函数 docstring 缺失 查找 补充 文档注释 读取文件 修改文件 运行测试 验证测试通过",
     "negative_constraints": []
   },
   {
     "task_id": "task_007",
-    "description": "修复 sample_project 中空列表输入导致的索引越界异常：当输入为空时应返回空结果而不是报错。",
+    "description": "定位并修复 sample_project 中空列表输入导致的索引越界异常（输入为空时应返回空结果而不是报错），并补充覆盖空输入的测试、保证全部用例通过。",
     "project_path": "benchmark/workspaces/task_007",
     "language": "python",
     "task_type": "bug_fix",
     "complexity": "medium",
     "success_criteria": "空列表输入不再抛出异常并返回空结果；新增覆盖该场景的测试；全部测试通过。",
-    "retrieval_query": "sample_project 空列表 输入 索引越界 修复 返回空结果 读取代码 定位异常 添加边界检查 验证行为",
+    "retrieval_query": "定位 修复 sample_project 空列表 输入 索引越界 异常 返回 空结果 读取 代码 分析 边界条件 编写 测试 覆盖 空输入 运行 测试 验证 用例 通过",
     "negative_constraints": []
   },
   {
     "task_id": "task_008",
-    "description": "为 sample_project 的配置加载函数增加参数校验：类型不符或取值为空时抛出带说明的 ValueError。",
+    "description": "为 sample_project 的配置加载函数增加参数校验：类型不符或取值为空时抛出带说明的 ValueError，并补充覆盖该场景的单元测试。",
     "project_path": "benchmark/workspaces/task_008",
     "language": "python",
     "task_type": "feature_add",
     "complexity": "medium",
     "success_criteria": "非法参数抛出 ValueError 且消息可读；合法参数行为不变；新增测试通过。",
-    "retrieval_query": "配置加载函数 参数校验 类型校验 空值校验 ValueError 读取函数 修改代码 验证",
+    "retrieval_query": "sample_project 配置加载函数 参数校验 类型检查 空值检查 抛出 ValueError 错误说明 修改代码 单元测试 覆盖异常场景 读取配置加载函数 读取现有测试",
     "negative_constraints": []
   },
   {
     "task_id": "task_009",
-    "description": "将 sample_project 中三处重复的取值转换逻辑合并为一个公共函数，并替换原有调用。",
+    "description": "先查找 sample_project 中三处重复的取值转换逻辑，再将其合并为一个公共函数并替换原有调用，改完后运行测试确认行为不变。",
     "project_path": "benchmark/workspaces/task_009",
     "language": "python",
     "task_type": "refactor",
     "complexity": "medium",
     "success_criteria": "重复逻辑只保留一处实现；原调用点全部改为调用新函数；全部测试通过。",
-    "retrieval_query": "sample_project 代码 读取 重复 取值转换逻辑 定位 公共函数 提取 创建 原有调用 替换 行为 一致性 验证",
+    "retrieval_query": "sample_project 取值转换逻辑 查找 读取 定位 提取公共函数 替换调用 运行测试 验证行为",
     "negative_constraints": []
   },
   {
     "task_id": "task_010",
-    "description": "统一 sample_project 中数据加载函数与调用方之间的参数命名与顺序不一致问题，涉及多个文件。",
+    "description": "统一 sample_project 中数据加载函数与调用方之间的参数命名与顺序不一致问题：先定位函数签名与所有调用方，再逐处对齐（涉及多个文件），对齐后运行全部测试确认不再出现位置参数错位。",
     "project_path": "benchmark/workspaces/task_010",
     "language": "python",
     "task_type": "bug_fix",
     "complexity": "complex",
     "success_criteria": "函数签名与所有调用方一致；不再出现位置参数错位；全部测试通过。",
-    "retrieval_query": "定位 数据加载函数 调用方 分析 参数命名 参数顺序 统一 修改函数签名 更新调用点 检查引用 验证调用",
+    "retrieval_query": "sample_project 数据加载函数 函数签名 调用方 参数命名 参数顺序 定位函数定义 搜索调用方 读取函数签名 读取调用代码 对齐参数 修改函数定义 修改调用方 运行全部测试 验证位置参数错位",
     "negative_constraints": []
   },
   {
     "task_id": "task_011",
-    "description": "把 sample_project 中过长的 utils 模块拆分为 text_utils 与 num_utils 两个模块，并更新导入路径。",
+    "description": "把 sample_project 中过长的 utils 模块拆分为 text_utils 与 num_utils 两个模块，更新导入路径，并运行测试确认导入与行为均未被破坏。",
     "project_path": "benchmark/workspaces/task_011",
     "language": "python",
     "task_type": "refactor",
     "complexity": "complex",
     "success_criteria": "两个模块职责清晰且无循环依赖；旧模块路径的导入全部更新；全部测试通过。",
-    "retrieval_query": "sample_project utils 模块 分析 拆分 text_utils num_utils 创建模块 迁移函数 更新导入路径 更新引用 验证导入",
+    "retrieval_query": "读取 sample_project utils 模块 分析 函数 分类 创建 text_utils 模块 创建 num_utils 模块 迁移 文本工具函数 迁移 数字工具函数 更新 导入路径 更新 引用 运行 测试 验证 导入 验证 行为",
     "negative_constraints": []
   },
   {
     "task_id": "task_012",
-    "description": "为 sample_project 中尚未被测试覆盖的异常分支补充单元测试，不修改被测代码。",
+    "description": "查找 sample_project 中尚未被测试覆盖的异常分支，并为其补充单元测试，不修改被测代码。",
     "project_path": "benchmark/workspaces/task_012",
     "language": "python",
     "task_type": "test_write",
     "complexity": "medium",
     "success_criteria": "异常分支均有测试覆盖；新增测试通过；被测代码未被修改。",
-    "retrieval_query": "sample_project 异常分支 测试覆盖 分析 补充 单元测试 读取源代码 读取测试代码 识别异常分支 设计测试用例 编写测试 运行测试 验证测试结果",
+    "retrieval_query": "sample_project 异常分支 测试覆盖 覆盖缺口 查找 分析 识别 单元测试 补充 读取源码 读取测试 运行测试 验证覆盖率",
     "negative_constraints": [
       "不修改被测代码"
     ]
   },
   {
     "task_id": "task_013",
-    "description": "更新 sample_project 的 README：测试运行命令与实际项目结构、测试目录保持一致。",
+    "description": "更新 sample_project 的 README：先列出并核对实际项目结构与测试目录，使 README 中的测试运行命令与之一致。",
     "project_path": "benchmark/workspaces/task_013",
     "language": "python",
     "task_type": "doc",
     "complexity": "medium",
     "success_criteria": "README 中的命令可直接执行成功；目录结构与实际一致；不再提到已不存在的文件。",
-    "retrieval_query": "sample_project README 测试运行命令 项目结构 测试目录 更新 读取文档 检查目录 识别命令 校验一致性",
+    "retrieval_query": "sample_project README 更新 项目结构 测试目录 核对 测试运行命令 读取文档 列出目录 修改文档 校验命令",
     "negative_constraints": []
   },
   {
@@ -152,51 +154,51 @@
     "task_type": "feature_add",
     "complexity": "simple",
     "success_criteria": "clamp 函数实现正确且可从包入口导入；边界值行为符合预期。",
-    "retrieval_query": "新增 clamp 函数 数值 区间 限制 导出 包入口 读取项目结构 读取包入口 修改包入口 实现函数 验证导出",
+    "retrieval_query": "定位 sample_project 包入口 读取现有代码 新增 clamp 函数 实现数值区间限制 导出 clamp 更新包入口",
     "negative_constraints": []
   },
   {
     "task_id": "task_015",
-    "description": "修正 sample_project 中错误提示文案与项目约定不一致的问题（统一使用中文并说明具体原因）。",
+    "description": "阅读相关代码后，修正 sample_project 中错误提示文案与项目约定不一致的问题（统一使用中文并说明具体原因），同步更新相关测试断言并保证全部通过。",
     "project_path": "benchmark/workspaces/task_015",
     "language": "python",
     "task_type": "bug_fix",
     "complexity": "simple",
     "success_criteria": "所有错误提示统一为中文且包含原因；相关测试断言同步更新并全部通过。",
-    "retrieval_query": "sample_project 错误提示文案 项目约定 中文文案 具体原因 定位项目文件 读取项目约定 读取错误提示 比对文案规范 修改提示文案 补充原因说明 校验文案一致性",
+    "retrieval_query": "sample_project 错误提示 文案 项目约定 中文 具体原因 定位 修正 更新 测试断言 运行测试 验证通过",
     "negative_constraints": []
   },
   {
     "task_id": "task_016",
-    "description": "清理 sample_project 中标记为 TODO/FIXME 的废弃代码路径，删除不再被调用的函数。",
+    "description": "清理 sample_project 中标记为 TODO/FIXME 的废弃代码路径，定位并删除不再被调用的函数，删除后运行测试确认无残留引用。",
     "project_path": "benchmark/workspaces/task_016",
     "language": "python",
     "task_type": "refactor",
     "complexity": "medium",
     "success_criteria": "废弃函数被删除；无残留引用与导入；TODO/FIXME 标记被处理；全部测试通过。",
-    "retrieval_query": "扫描 sample_project 查找 TODO FIXME 标记 定位 废弃代码路径 分析 函数调用关系 识别 冗余函数 删除 冗余函数 清理 代码引用 验证 项目",
+    "retrieval_query": "sample_project TODO FIXME 废弃代码路径 扫描 定位 闲置函数 调用关系 分析 删除 函数 引用 更新 测试 运行 验证",
     "negative_constraints": []
   },
   {
     "task_id": "task_017",
-    "description": "为 sample_project 新增 cache 模块（简单的字典缓存），并接入数据加载流程使其生效。",
+    "description": "先了解 sample_project 的项目结构，再新增 cache 模块（简单的字典缓存）并接入数据加载流程使其生效，同时补充测试验证缓存命中且原有行为不变。",
     "project_path": "benchmark/workspaces/task_017",
     "language": "python",
     "task_type": "feature_add",
     "complexity": "complex",
     "success_criteria": "cache 模块被数据加载流程实际调用；重复读取命中缓存；新增测试通过且不影响原有行为。",
-    "retrieval_query": "新增 cache 模块 字典缓存 数据加载流程 接入缓存 读取数据加载代码 创建缓存模块 修改数据加载逻辑 验证缓存生效",
+    "retrieval_query": "了解 sample_project 项目结构 定位 数据加载 流程 新增 cache 模块 实现 字典缓存 接入 数据加载 编写测试 验证 缓存命中 原有行为 不变",
     "negative_constraints": []
   },
   {
     "task_id": "task_018",
-    "description": "修复 sample_project 中字符串处理函数对非 ASCII 输入返回乱码的问题。",
+    "description": "定位并修复 sample_project 中字符串处理函数对非 ASCII 输入返回乱码的问题，并补充覆盖非 ASCII 输入的测试。",
     "project_path": "benchmark/workspaces/task_018",
     "language": "python",
     "task_type": "bug_fix",
     "complexity": "medium",
     "success_criteria": "中文与常见非 ASCII 输入返回正确结果；新增覆盖该场景的测试；全部测试通过。",
-    "retrieval_query": "字符串处理函数 Unicode 输入 乱码 修复 定位代码 读取函数 分析编码 修改实现 验证输出",
+    "retrieval_query": "字符串处理函数 非 ASCII 输入 乱码 定位 读取代码 复现问题 分析编码 修复编码逻辑 补充测试 运行测试 验证结果",
     "negative_constraints": []
   },
   {
@@ -207,18 +209,18 @@
     "task_type": "test_write",
     "complexity": "simple",
     "success_criteria": "零与负数场景均有测试；新增测试通过；若发现缺陷则以测试暴露而不擅自改动被测代码。",
-    "retrieval_query": "sample_project divide 函数 测试用例 除数为零 负数 场景 覆盖 定位函数 读取测试文件 编写测试 断言 异常 返回值 边界条件 运行测试 验证覆盖",
+    "retrieval_query": "读取 sample_project 定位 divide 函数 分析 除零 场景 分析 负数 场景 编写 测试用例 补充 测试 运行 测试 验证 行为 覆盖",
     "negative_constraints": []
   },
   {
     "task_id": "task_020",
-    "description": "为 sample_project 的公共接口补全类型注解，并保证静态检查与现有测试通过。",
+    "description": "为 sample_project 的公共接口补全类型注解：先定位全部公共函数，再保证语法检查与现有测试通过。",
     "project_path": "benchmark/workspaces/task_020",
     "language": "python",
     "task_type": "doc",
     "complexity": "complex",
     "success_criteria": "全部公共函数都有参数与返回值类型注解；语法检查通过；全部测试通过。",
-    "retrieval_query": "公共接口 类型注解 补全 读取代码 分析接口签名 修改代码 运行静态检查 运行现有测试 验证结果",
+    "retrieval_query": "定位 公共函数 读取 项目文件 分析 函数签名 补全 类型注解 修改 代码 运行 语法检查 运行 现有测试 验证 测试通过",
     "negative_constraints": []
   }
 ]

@@ -26,13 +26,13 @@
   },
   {
     "task_id": "task_006",
-    "required_tools": ["read_file", "edit_file"],
+    "required_tools": ["read_file", "edit_file", "run_tests"],
     "optional_tools": ["check_syntax", "find_symbol"]
   },
   {
     "task_id": "task_007",
     "required_tools": ["read_file", "search_code", "edit_file", "run_tests"],
-    "optional_tools": ["git_diff", "check_syntax"]
+    "optional_tools": ["write_file", "git_diff", "check_syntax"]
   },
   {
     "task_id": "task_008",
@@ -71,8 +71,8 @@
   },
   {
     "task_id": "task_015",
-    "required_tools": ["search_code", "edit_file", "run_tests"],
-    "optional_tools": ["read_file", "check_syntax"]
+    "required_tools": ["read_file", "search_code", "edit_file", "run_tests"],
+    "optional_tools": ["check_syntax"]
   },
   {
     "task_id": "task_016",
@@ -87,7 +87,7 @@
   {
     "task_id": "task_018",
     "required_tools": ["run_tests", "read_file", "search_code", "edit_file"],
-    "optional_tools": ["git_diff", "check_syntax"]
+    "optional_tools": ["write_file", "git_diff", "check_syntax"]
   },
   {
     "task_id": "task_019",
