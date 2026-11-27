@@ -27,7 +27,7 @@ from retrieval.adaptive_selector import AdaptiveSelector
 from retrieval.tfidf_retriever import RetrievedTool
 from tools.definitions import EXAMPLE_TOOL_DEFINITIONS, ToolDefinition
 from tools.registry import ToolRegistry, build_default_registry
-from tools.implementations import set_workspace_root
+from tools.implementations import configure_workspace
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -174,14 +174,14 @@ class TestFrameworkSkeleton(unittest.TestCase):
         workspace = PROJECT_ROOT / "workspace"
         workspace.mkdir(exist_ok=True)
         (workspace / "a.py").write_text("print('ok')\n", encoding="utf-8")
-        set_workspace_root(workspace)
+        configure_workspace(workspace)
         try:
             self.assertEqual(
                 default_registry.execute_tool("read_file", {"path": "a.py"}),
                 "print('ok')",
             )
         finally:
-            set_workspace_root(None)
+            configure_workspace(None)
 
     # ------------------------------------------------------------------
     # 未实现接口必须明确报错
