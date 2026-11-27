@@ -195,7 +195,6 @@ def build_task() -> TaskInfo:
         ),
         task_type="doc",
         language="python",
-        intents=["调用工具获取项目状态", "统计 Python 文件数", "统计测试文件数"],
         complexity="simple",
     )
 

@@ -28,7 +28,6 @@ def build_payload(**overrides) -> dict:
         "description": "修复计算器的除零异常并补充测试",
         "task_type": "bug_fix",
         "language": "python",
-        "intents": ["读取代码", "修改函数", "运行测试"],
         "complexity": "simple",
     }
     payload.update(overrides)
@@ -58,7 +57,6 @@ class TestNormalAnalysis(unittest.TestCase):
         self.assertEqual(task.description, "修复计算器的除零异常并补充测试")
         self.assertEqual(task.task_type, "bug_fix")
         self.assertEqual(task.language, "python")
-        self.assertEqual(task.intents, ["读取代码", "修改函数", "运行测试"])
         self.assertEqual(task.complexity, "simple")
         self.assertTrue(task.task_id.startswith("task_"))
 
@@ -75,14 +73,13 @@ class TestNormalAnalysis(unittest.TestCase):
         for complexity in COMPLEXITY_LEVELS:
             self.assertIn(complexity, SYSTEM_PROMPT)
 
-    def test_missing_language_and_intents_use_defaults(self) -> None:
+    def test_missing_language_uses_default(self) -> None:
         content = json.dumps(
             {"task_type": "refactor", "complexity": "medium"}, ensure_ascii=False
         )
         analyzer, _ = make_analyzer(content)
         task = analyzer.analyze("重构数据加载模块")
         self.assertEqual(task.language, "unknown")
-        self.assertEqual(task.intents, [])
         self.assertEqual(task.description, "重构数据加载模块")
 
     def test_empty_model_description_falls_back_to_input(self) -> None:
@@ -150,12 +147,11 @@ class TestJsonParsing(unittest.TestCase):
 class TestChineseTask(unittest.TestCase):
     """中文任务描述。"""
 
-    def test_chinese_description_and_intents(self) -> None:
+    def test_chinese_description(self) -> None:
         payload = build_payload(
             description="为字符串工具模块新增 slugify 函数",
             task_type="feature_add",
             language="python",
-            intents=["新建文件", "编写函数", "补充测试"],
             complexity="medium",
         )
         analyzer, _ = make_analyzer(json.dumps(payload, ensure_ascii=False))
@@ -163,7 +159,6 @@ class TestChineseTask(unittest.TestCase):
 
         self.assertEqual(task.task_type, "feature_add")
         self.assertEqual(task.complexity, "medium")
-        self.assertEqual(task.intents, ["新建文件", "编写函数", "补充测试"])
         self.assertIn("slugify", task.description)
 
 
@@ -198,19 +193,64 @@ class TestInvalidFields(unittest.TestCase):
         with self.assertRaises(TaskAnalysisError):
             analyzer.analyze("修复除零异常")
 
-    def test_intents_must_be_list(self) -> None:
+
+class TestStructuredRetrievalFields(unittest.TestCase):
+    """预标注检索字段：retrieval_query 与 negative_constraints。"""
+
+    def test_fields_are_parsed(self) -> None:
+        payload = build_payload(
+            retrieval_query="计算器 除零异常 修复 单元测试",
+            negative_constraints=["不修改其他模块"],
+        )
+        analyzer, _ = make_analyzer(json.dumps(payload, ensure_ascii=False))
+        task = analyzer.analyze("修复除零异常，不要修改其他模块")
+
+        self.assertEqual(task.retrieval_query, "计算器 除零异常 修复 单元测试")
+        self.assertEqual(task.negative_constraints, ["不修改其他模块"])
+
+    def test_missing_fields_use_defaults(self) -> None:
+        analyzer, _ = make_analyzer(json.dumps(build_payload(), ensure_ascii=False))
+        task = analyzer.analyze("修复除零异常")
+
+        # 分析阶段保证 retrieval_query 非空：模型没给时由 description 构造
+        self.assertEqual(task.retrieval_query, "修复计算器的除零异常并补充测试")
+        self.assertEqual(task.negative_constraints, [])
+
+    def test_model_query_with_negation_is_cleaned(self) -> None:
+        payload = build_payload(retrieval_query="读取文件，不要修改代码")
+        analyzer, _ = make_analyzer(json.dumps(payload, ensure_ascii=False))
+        task = analyzer.analyze("读取文件并解释，不要修改代码")
+
+        self.assertEqual(task.retrieval_query, "读取文件")
+
+    def test_retrieval_query_must_be_string(self) -> None:
         analyzer, _ = make_analyzer(
-            json.dumps(build_payload(intents="读取代码"), ensure_ascii=False)
+            json.dumps(build_payload(retrieval_query=["读取", "修复"]), ensure_ascii=False)
         )
         with self.assertRaises(TaskAnalysisError):
             analyzer.analyze("修复除零异常")
 
-    def test_intents_items_are_normalized(self) -> None:
+    def test_negative_constraints_must_be_list(self) -> None:
         analyzer, _ = make_analyzer(
-            json.dumps(build_payload(intents=[" 读取代码 ", "", 123]), ensure_ascii=False)
+            json.dumps(build_payload(negative_constraints="不要修改"), ensure_ascii=False)
+        )
+        with self.assertRaises(TaskAnalysisError):
+            analyzer.analyze("修复除零异常")
+
+    def test_negative_constraints_items_are_normalized(self) -> None:
+        analyzer, _ = make_analyzer(
+            json.dumps(
+                build_payload(negative_constraints=[" 不修改其他模块 ", "", 123]),
+                ensure_ascii=False,
+            )
         )
         task = analyzer.analyze("修复除零异常")
-        self.assertEqual(task.intents, ["读取代码", "123"])
+        self.assertEqual(task.negative_constraints, ["不修改其他模块", "123"])
+
+    def test_system_prompt_describes_structured_fields(self) -> None:
+        self.assertIn("retrieval_query", SYSTEM_PROMPT)
+        self.assertIn("negative_constraints", SYSTEM_PROMPT)
+        self.assertIn("禁止写工具名", SYSTEM_PROMPT)
 
 
 class TestLLMErrors(unittest.TestCase):

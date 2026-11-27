@@ -5,6 +5,8 @@
 - 中文不依赖默认分词（默认按空格切分对中文无效），改为「单字 + 相邻双字」切分，
   英文/标识符按单词切分（``read_file`` 同时保留整体与下划线子词）；
 - 查询（任务描述）与工具矩阵之间使用 Cosine Similarity 计算相关性；
+- 查询由分析阶段构造（``retrieval_query``）：检索器只消费现成查询词，
+  不做否定清洗，也不回退到 description；
 - 结果按分数降序排列，分数相同时保持 ``fit()`` 时的工具注册顺序（稳定排序）。
 
 负责成员：成员 A
@@ -31,6 +33,7 @@ _CJK_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]+")
 
 #: 英文单词 / 标识符 / 数字
 _WORD_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|\d+")
+
 
 
 def _tokenize(text: str) -> List[str]:
@@ -200,7 +203,15 @@ class TFIDFRetriever:
 
     @staticmethod
     def _build_query(task_info: Union["TaskInfo", str]) -> str:
-        """把查询输入统一转换为检索文本。"""
+        """把查询输入统一转换为检索文本。
+
+        - 字符串：视为已构造好的查询，原样使用；
+        - TaskInfo：必须已经包含非空 ``retrieval_query``（由分析阶段生成），
+          检索器只使用 ``retrieval_query``，不做否定清洗，也不回退 description。
+
+        Raises:
+            ValueError: TaskInfo 的 ``retrieval_query`` 为空。
+        """
         if isinstance(task_info, str):
             return task_info
 
@@ -208,13 +219,13 @@ class TFIDFRetriever:
         if description is None:
             raise TypeError("task_info 必须是查询字符串，或包含 description 字段的 TaskInfo")
 
-        parts: List[str] = [
-            str(description),
-            str(getattr(task_info, "task_type", "") or ""),
-            str(getattr(task_info, "language", "") or ""),
-        ]
-        parts.extend(str(intent) for intent in (getattr(task_info, "intents", None) or []))
-        return " ".join(part for part in parts if part)
+        retrieval_query = str(getattr(task_info, "retrieval_query", "") or "").strip()
+        if not retrieval_query:
+            raise ValueError(
+                "TaskInfo.retrieval_query 为空：请先在分析阶段生成检索查询"
+            )
+
+        return retrieval_query
 
 
 __all__ = ["TFIDFRetriever", "RetrievedTool"]

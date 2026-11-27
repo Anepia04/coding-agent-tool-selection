@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional
 
 from config import COMPLEXITY_LEVELS
+from retrieval.query_utils import build_retrieval_query, sanitize_query
 
 if TYPE_CHECKING:
     from .llm_client import LLMClient
@@ -34,11 +35,13 @@ JSON 字段要求：
 - "description": 对任务的一句话复述（字符串）；
 - "task_type": 任务类型，必须是以下之一：bug_fix（修复缺陷）、feature_add（新增功能）、refactor（重构）、test_write（编写测试）、doc（编写文档）；
 - "language": 任务主要涉及的编程语言（如 python），无法确定时输出 "unknown"；
-- "intents": 字符串数组，描述完成任务需要执行的操作类型，例如 ["读取代码", "修改函数", "运行测试"]；
+- "retrieval_query": 从任务描述中抽取的**正向**检索关键词，用空格分隔。只写任务要执行的动作和对象；
+  禁止出现「不要 / 禁止 / 无需」等否定词，禁止写工具名（如 read_file），否定要求放到 negative_constraints；
+- "negative_constraints": 字符串数组，任务明确禁止的操作，例如 ["不修改其他模块"]；没有则为 []；
 - "complexity": 任务复杂度，必须是以下之一：simple、medium、complex。
 
 示例：
-{"description": "修复计算器的除零异常并补充测试", "task_type": "bug_fix", "language": "python", "intents": ["读取代码", "修改函数", "运行测试"], "complexity": "simple"}
+{"description": "修复计算器的除零异常并补充测试", "task_type": "bug_fix", "language": "python", "retrieval_query": "计算器 除零异常 修复 修改代码 单元测试", "negative_constraints": [], "complexity": "simple"}
 """
 
 
@@ -55,7 +58,8 @@ class TaskInfo:
         description: 原始自然语言任务描述（检索的主要输入）。
         task_type: 任务类型，取值见 ``TASK_TYPES``。
         language: 主要编程语言，如 python。
-        intents: 任务意图关键词列表，供检索增强与自适应选择使用。
+        retrieval_query: 面向检索器的正向关键词（不含否定词与工具名）；分析阶段保证非空。
+        negative_constraints: 任务明确禁止的操作，供评价或工具过滤使用。
         complexity: 任务复杂度，取值见 ``config.COMPLEXITY_LEVELS``。
     """
 
@@ -63,7 +67,8 @@ class TaskInfo:
     description: str
     task_type: str = "unknown"
     language: str = "unknown"
-    intents: List[str] = field(default_factory=list)
+    retrieval_query: str = ""
+    negative_constraints: List[str] = field(default_factory=list)
     complexity: str = "simple"
 
     def __post_init__(self) -> None:
@@ -71,6 +76,10 @@ class TaskInfo:
             raise ValueError(
                 f"complexity 必须是 {COMPLEXITY_LEVELS} 之一，当前为 {self.complexity!r}"
             )
+        if not isinstance(self.retrieval_query, str):
+            raise ValueError("retrieval_query 必须是字符串")
+        if not isinstance(self.negative_constraints, list):
+            raise ValueError("negative_constraints 必须是字符串列表")
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为可 JSON 序列化的字典。"""
@@ -79,19 +88,31 @@ class TaskInfo:
             "description": self.description,
             "task_type": self.task_type,
             "language": self.language,
-            "intents": list(self.intents),
+            "retrieval_query": self.retrieval_query,
+            "negative_constraints": list(self.negative_constraints),
             "complexity": self.complexity,
         }
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "TaskInfo":
         """从字典（如 benchmark/tasks.json 中的一条任务）构造 TaskInfo。"""
+        raw_negative = data.get("negative_constraints") or []
+        negative_constraints = (
+            [str(item).strip() for item in raw_negative if str(item).strip()]
+            if isinstance(raw_negative, list)
+            else []
+        )
+        retrieval_query = data.get("retrieval_query") or ""
+        if not isinstance(retrieval_query, str):
+            retrieval_query = ""
+
         return cls(
             task_id=str(data["task_id"]),
             description=str(data.get("description", "")),
             task_type=str(data.get("task_type", "unknown")),
             language=str(data.get("language", "unknown")),
-            intents=list(data.get("intents") or []),
+            retrieval_query=retrieval_query.strip(),
+            negative_constraints=negative_constraints,
             complexity=str(data.get("complexity", "simple")),
         )
 
@@ -201,23 +222,43 @@ class TaskAnalyzer:
         else:
             language = language.strip()
 
-        raw_intents = payload.get("intents", [])
-        if raw_intents is None:
-            raw_intents = []
-        if not isinstance(raw_intents, list):
-            raise TaskAnalysisError(f"intents 必须是字符串数组，实际为 {type(raw_intents).__name__}")
-        intents = [str(intent).strip() for intent in raw_intents if str(intent).strip()]
+        raw_query = payload.get("retrieval_query")
+        if raw_query is None:
+            retrieval_query = ""
+        elif not isinstance(raw_query, str):
+            raise TaskAnalysisError(
+                f"retrieval_query 必须是字符串，实际为 {type(raw_query).__name__}"
+            )
+        else:
+            # 即使模型违规带入了否定句，也在这里清洗掉
+            retrieval_query = sanitize_query(raw_query).strip()
+
+        raw_negative = payload.get("negative_constraints", [])
+        if raw_negative is None:
+            raw_negative = []
+        if not isinstance(raw_negative, list):
+            raise TaskAnalysisError(
+                f"negative_constraints 必须是字符串数组，实际为 {type(raw_negative).__name__}"
+            )
+        negative_constraints = [
+            str(item).strip() for item in raw_negative if str(item).strip()
+        ]
 
         model_description = payload.get("description")
         if isinstance(model_description, str) and model_description.strip():
             description = model_description.strip()
+
+        # 分析阶段保证检索查询非空：模型没给或被清洗为空时，从描述构造
+        if not retrieval_query:
+            retrieval_query = build_retrieval_query(description)
 
         return TaskInfo(
             task_id=task_id or f"task_{uuid.uuid4().hex[:8]}",
             description=description,
             task_type=task_type,
             language=language,
-            intents=intents,
+            retrieval_query=retrieval_query,
+            negative_constraints=negative_constraints,
             complexity=complexity,
         )
 
