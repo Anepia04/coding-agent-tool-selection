@@ -26,8 +26,8 @@ Coding Agent 通常把全部工具 schema 随每轮请求发送给模型。工�
 
 | 状态 | 内容 |
 |---|---|
-| 已完成 | Agent 框架（多轮 Function Calling）、LLMClient（OpenAI 兼容）、TaskAnalyzer、TF-IDF 检索、AdaptiveSelector、工具库与安全边界、真实 Qwen 联调脚本、114 项单元测试 |
-| 待完成 | `experiments/` 三个实验入口与指标实现（成员 C）、Benchmark 任务扩充（成员 B）、结果统计与可视化（成员 D） |
+| 已完成 | Agent 框架（多轮 Function Calling）、LLMClient（OpenAI 兼容）、TaskAnalyzer（含结构化检索字段）、TF-IDF 检索、AdaptiveSelector、工具库与安全边界、任务预标注脚本、真实 Qwen 联调脚本、129 项单元测试 |
+| 待完成 | `experiments/` 三个实验入口与指标实现（成员 C）、Benchmark 任务扩充与预标注数据（成员 B）、结果统计与可视化（成员 D） |
 
 ---
 
@@ -42,6 +42,7 @@ coding-agent-tool-selection/
 │
 ├── retrieval/                 # 动态工具选择（成员 A）
 │   ├── tfidf_retriever.py     # TF-IDF + Cosine Similarity 工具检索
+│   ├── query_utils.py         # 分析阶段查询构造：否定清洗 + 正向关键词
 │   └── adaptive_selector.py   # Fixed / Adaptive Top-K 选择
 │
 ├── tools/                     # 工具库（成员 B）
@@ -71,6 +72,7 @@ coding-agent-tool-selection/
 │
 ├── scripts/                   # 联调与诊断脚本（手动执行）
 │   ├── probe_retrieval.py     # TF-IDF 检索诊断：排名、交集词、召回、噪声词
+│   ├── preanalyze_tasks.py    # 任务预标注：生成 retrieval_query / 约束
 │   ├── test_qwen_api.py       # 真实 API 连通性冒烟
 │   └── test_qwen_agent.py     # 真实三种模式 Function Calling 联调
 │
@@ -172,10 +174,11 @@ agent = AgentController(
 
 task = TaskInfo(
     task_id="demo",
-    description="修复 calculator.py 的除零异常并补充测试",
+    description="修复 calculator.py 的除零异常并补充测试，不要修改其他模块",
     task_type="bug_fix",
     language="python",
-    intents=["读取代码", "修改函数", "运行测试"],
+    retrieval_query="calculator 除零异常 修复 单元测试 代码",
+    negative_constraints=["不修改其他模块"],
     complexity="simple",
 )
 
@@ -207,7 +210,7 @@ py scripts/probe_retrieval.py         # 检索排名 / 召回 / 噪声诊断
 python -m unittest discover -s tests -v
 ```
 
-当前 114 项测试全部通过。
+当前 129 项测试全部通过。
 
 ---
 
@@ -218,7 +221,8 @@ python -m unittest discover -s tests -v
 | `agent/llm_client.py` | 消息发送、工具 schema 透传、文本 / tool_calls / Token 解析、异常统一 | 执行工具 |
 | `agent/task_analyzer.py` | 自然语言 → `TaskInfo`，字段校验与 JSON 解析 | 检索、选择、执行 |
 | `agent/controller.py` | 任务分析、工具选择、schema 获取、多轮工具调用、结果记录 | TF-IDF / Top-K 算法、工具业务逻辑 |
-| `retrieval/tfidf_retriever.py` | 中文友好分词、工具索引、Cosine 相似度排序 | 决定最终工具数量 |
+| `retrieval/tfidf_retriever.py` | 中文友好分词、工具索引、Cosine 相似度排序 | 构造查询、决定最终工具数量 |
+| `retrieval/query_utils.py` | 分析阶段构造检索查询：清洗否定约束，保留正向关键词 | 检索打分、工具选择 |
 | `retrieval/adaptive_selector.py` | Fixed / Adaptive Top-K 选择 | 检索打分 |
 | `tools/definitions.py` | 工具元数据（模型描述 + 检索 hints） | 实现与注册 |
 | `tools/implementations.py` | 工具函数、路径围栏、命令白名单、输出截断 | 决定暴露哪些工具 |

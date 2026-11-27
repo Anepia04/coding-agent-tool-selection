@@ -10,8 +10,8 @@ AgentController 负责编排一次完整任务，是各模块的组装点：
          -> 工具调用（ToolRegistry.execute_tool），整理为 AgentStep
          -> AgentRunResult
 
-当前为**第一阶段**：只执行单轮工具调用（模型一次回复中请求的工具全部执行），
-不实现「工具结果回填 → 再次请求模型」的多轮 Agent Loop。
+支持多轮工具调用：工具结果以 role="tool" 消息回填后继续请求模型，直到模型
+不再请求工具或达到 max_steps。
 
 注意：本模块不实现 TF-IDF、Cosine Similarity、Top-K 排序或自适应选择算法，
 这些能力全部通过 retrieval 模块的接口调用。
@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Tuple, Union
 
 from config import DEFAULT_EXPERIMENT_MODE, EXPERIMENT_MODES
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: 提供给模型的系统提示词（第一阶段：单轮工具调用）
+#: 提供给模型的系统提示词
 SYSTEM_PROMPT = (
     "你是一个编程助手 Coding Agent。你可以调用提供的工具读取、修改和验证代码。"
     "请根据任务需要选择合适的工具；如果不需要工具，直接给出回答。"
@@ -213,6 +213,7 @@ class AgentController:
             task_info = pre_analyzed or self.task_analyzer.analyze(
                 description or "", task_id=explicit_task_id
             )
+            task_info = self._ensure_retrieval_query(task_info)
             result.task_id = task_info.task_id
 
             # 工具集合在任务执行期间保持不变，三种模式仅在选定阶段有差异
@@ -260,6 +261,32 @@ class AgentController:
 
         result.execution_time = time.perf_counter() - started
         return result
+
+    def _ensure_retrieval_query(self, task_info: TaskInfo) -> TaskInfo:
+        """保证 TaskInfo 包含非空 retrieval_query。
+
+        预标注任务直接复用已有字段；缺失时在这里调用一次 TaskAnalyzer 补齐，
+        而不是把「用 description 凑合」的决定推给检索器。
+        """
+        if str(task_info.retrieval_query or "").strip():
+            return task_info
+        if self.task_analyzer is None:
+            raise ValueError("TaskInfo 缺少 retrieval_query，且未配置 TaskAnalyzer")
+
+        analyzed = self.task_analyzer.analyze(
+            task_info.description, task_id=task_info.task_id
+        )
+        query = str(analyzed.retrieval_query or "").strip()
+        if not query:
+            raise ValueError("任务分析未生成 retrieval_query，无法执行工具检索")
+
+        return replace(
+            task_info,
+            retrieval_query=query,
+            negative_constraints=list(
+                task_info.negative_constraints or analyzed.negative_constraints
+            ),
+        )
 
     def _select_tools(self, task_info: "TaskInfo", mode: str) -> List[str]:
         """按实验模式确定本轮提供给模型的工具名称列表。

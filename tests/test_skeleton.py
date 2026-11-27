@@ -85,7 +85,8 @@ class TestFrameworkSkeleton(unittest.TestCase):
             "description": "修复除零异常",
             "task_type": "bug_fix",
             "language": "python",
-            "intents": ["bug_fix", "test"],
+            "retrieval_query": "除零异常 修复 单元测试",
+            "negative_constraints": ["不修改其他模块"],
             "complexity": "simple",
         }
         info = TaskInfo.from_dict(data)

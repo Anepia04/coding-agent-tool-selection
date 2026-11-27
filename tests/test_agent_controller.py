@@ -22,7 +22,7 @@ def build_task_info(**overrides) -> TaskInfo:
         "description": "修复计算器的除零异常并补充测试",
         "task_type": "bug_fix",
         "language": "python",
-        "intents": ["修改代码", "运行测试"],
+        "retrieval_query": "计算器 除零异常 修复 单元测试",
         "complexity": "simple",
     }
     data.update(overrides)
@@ -173,6 +173,18 @@ class TestTaskAnalysis(unittest.TestCase):
 
         mocks["analyzer"].analyze.assert_not_called()
         self.assertEqual(result.task_id, "task_777")
+
+    def test_task_info_without_retrieval_query_is_analyzed(self) -> None:
+        controller, mocks = build_controller()
+        task_info = build_task_info(retrieval_query="")
+
+        result = controller.run(task_info, mode="baseline")
+
+        mocks["analyzer"].analyze.assert_called_once_with(
+            task_info.description, task_id=task_info.task_id
+        )
+        self.assertTrue(result.task_success)
+        self.assertIsNone(result.error_message)
 
 
 class TestLLMInteraction(unittest.TestCase):

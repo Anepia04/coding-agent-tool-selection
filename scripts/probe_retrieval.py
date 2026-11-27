@@ -28,6 +28,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from agent.task_analyzer import TaskInfo  # noqa: E402
+from retrieval.query_utils import build_retrieval_query  # noqa: E402
 from retrieval.tfidf_retriever import TFIDFRetriever, _tokenize  # noqa: E402
 from tools.definitions import EXAMPLE_TOOL_DEFINITIONS, ToolDefinition  # noqa: E402
 
@@ -123,7 +124,11 @@ def analyze(
     docs: Dict[str, Set[str]],
     show_tokens: bool,
 ) -> None:
-    info = TaskInfo(task_id="probe", description=query)
+    info = TaskInfo(
+        task_id="probe",
+        description=query,
+        retrieval_query=build_retrieval_query(query),
+    )
     ranked = retriever.retrieve(info)
     names = [item.tool_name for item in ranked]
 
@@ -203,7 +208,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         label = f"任务 {task_id}（complexity={task.get('complexity')}）"
         analyze(
             label,
-            str(task.get("description", "")),
+            str(task.get("retrieval_query") or task.get("description", "")),
             retriever,
             definitions,
             required,

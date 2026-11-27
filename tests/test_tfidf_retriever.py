@@ -9,6 +9,7 @@ from __future__ import annotations
 import unittest
 
 from agent.task_analyzer import TaskInfo
+from retrieval.query_utils import build_retrieval_query, sanitize_query
 from retrieval.tfidf_retriever import RetrievedTool, TFIDFRetriever, _tokenize
 from tools.definitions import ToolDefinition
 
@@ -160,7 +161,7 @@ class TestTFIDFRetriever(unittest.TestCase):
             description="修复除零异常并运行测试",
             task_type="bug_fix",
             language="python",
-            intents=["测试"],
+            retrieval_query="修复除零异常 运行测试",
             complexity="simple",
         )
         from_task_info = self.retriever.retrieve(task_info)
@@ -200,6 +201,82 @@ class TestTFIDFRetriever(unittest.TestCase):
         self.assertAlmostEqual(results[0].score, results[1].score, places=12)
         self.assertEqual([results[0].tool_name, results[1].tool_name], ["tool_a", "tool_b"])
         self.assertEqual([results[0].rank, results[1].rank], [1, 2])
+
+    # ------------------------------------------------------------------
+    # 8. 否定约束清洗
+    # ------------------------------------------------------------------
+
+    def test_sanitize_drops_negated_prefix_clause(self) -> None:
+        cleaned = sanitize_query("不要修改任何代码，只解释除零异常")
+        self.assertEqual(cleaned, "只解释除零异常")
+
+    def test_sanitize_drops_negated_clause_with_conjunction(self) -> None:
+        cleaned = sanitize_query(
+            "不要修改任何代码，也不要运行测试，只读取并解释"
+        )
+        self.assertEqual(cleaned, "只读取并解释")
+
+    def test_sanitize_drops_pure_constraint_clause(self) -> None:
+        cleaned = sanitize_query("读取并解释代码，保持代码不变")
+        self.assertEqual(cleaned, "读取并解释代码")
+
+    def test_sanitize_keeps_positive_clause_with_mid_sentence_negation(self) -> None:
+        query = "修复输入不能为空的校验 bug"
+        self.assertEqual(sanitize_query(query), query)
+
+    def test_sanitize_falls_back_when_all_clauses_negated(self) -> None:
+        query = "不要修改任何代码"
+        self.assertEqual(sanitize_query(query), query)
+
+    def test_sanitize_handles_english_negation(self) -> None:
+        cleaned = sanitize_query("do not edit the file, just explain it")
+        self.assertEqual(cleaned, "just explain it")
+
+    def test_built_query_no_longer_ranks_forbidden_tool_first(self) -> None:
+        self.retriever.fit(self.tools)
+
+        affirmative = self.retriever.retrieve("运行测试")
+        cleaned = build_retrieval_query("不要运行测试，只读取文件内容")
+        negated = self.retriever.retrieve(cleaned)
+
+        self.assertEqual(cleaned, "只读取文件内容")
+        self.assertEqual(affirmative[0].tool_name, "run_tests")
+        self.assertEqual(negated[0].tool_name, "read_file")
+        self.assertNotEqual(negated[0].tool_name, "run_tests")
+
+    def test_task_info_without_retrieval_query_raises(self) -> None:
+        self.retriever.fit(self.tools)
+        task_info = TaskInfo(
+            task_id="task_missing_query",
+            description="不要修改代码，只读取文件内容",
+            task_type="doc",
+            language="python",
+            complexity="simple",
+        )
+
+        with self.assertRaises(ValueError):
+            self.retriever.retrieve(task_info)
+
+    # ------------------------------------------------------------------
+    # 9. 预标注 retrieval_query 优先
+    # ------------------------------------------------------------------
+
+    def test_retrieval_query_takes_priority_over_description(self) -> None:
+        self.retriever.fit(self.tools)
+        task_info = TaskInfo(
+            task_id="task_preanalyzed",
+            description="不要修改任何代码，也不要运行测试，只解释逻辑",
+            task_type="doc",
+            language="python",
+            retrieval_query="读取文件内容",
+            negative_constraints=["不修改代码", "不运行测试"],
+            complexity="simple",
+        )
+
+        results = self.retriever.retrieve(task_info)
+
+        self.assertEqual(results[0].tool_name, "read_file")
+        self.assertNotIn("run_tests", [item.tool_name for item in results[:1]])
 
 
 if __name__ == "__main__":

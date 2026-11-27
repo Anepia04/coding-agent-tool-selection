@@ -47,7 +47,8 @@
 | `agent/llm_client.py` | 消息发送、工具透传、文本 / tool_calls / Token 解析 | 不执行工具、不做任务分析 |
 | `agent/task_analyzer.py` | Prompt 约束 + JSON 解析 → `TaskInfo` | 不检索、不选择、不执行 |
 | `agent/controller.py` | 任务解析、工具选择、多轮循环、轨迹记录 | 不实现 TF-IDF / Top-K / 工具业务 |
-| `retrieval/tfidf_retriever.py` | 中文友好分词、TF-IDF 索引、Cosine 排序 | 不决定最终 K |
+| `retrieval/tfidf_retriever.py` | 中文友好分词、TF-IDF 索引、Cosine 排序 | 不构造查询、不决定最终 K |
+| `retrieval/query_utils.py` | 分析阶段的查询构造：否定约束清洗、正向关键词拼接 | 不检索、不选择工具 |
 | `retrieval/adaptive_selector.py` | fixed / adaptive 两种选择策略 | 不检索打分 |
 | `tools/definitions.py` | `ToolDefinition` 与 16 个工具元数据 | 不实现工具函数 |
 | `tools/implementations.py` | 工具函数、路径围栏、命令白名单、输出截断 | 不决定暴露哪些工具 |
@@ -55,7 +56,7 @@
 | `experiments/*.py` | 三组实验入口与指标 | 当前为接口占位，未实现 |
 | `experiments/schemas.py` | `ExperimentConfig` / `ExperimentResult` / CSV 列 | 结构由 A 维护，C 使用 |
 | `benchmark/` | 任务、工作区、Expected Tools | 当前 3 条占位任务 |
-| `scripts/` | 检索诊断、真实 API 联调 | 手动执行，不进入 unittest |
+| `scripts/` | 检索诊断、任务预标注、真实 API 联调 | 手动执行，不进入 unittest |
 
 ---
 
@@ -70,12 +71,15 @@ TaskInfo
   -> 直接使用
 
 完整 benchmark 映射
-  （含 task_id / description / task_type / language / complexity）
+  （含 task_id / description / task_type / language / complexity，
+    以及预标注的 retrieval_query / negative_constraints）
   -> TaskInfo.from_dict(task)
 
 自然语言字符串或不完整映射
   -> TaskAnalyzer.analyze(description, task_id) -> TaskInfo
 ```
+
+预标注字段在实验前由一次性脚本生成并冻结；正式实验中三种模式都走 `TaskInfo.from_dict`，不会再调用 LLM 分析，避免任务语义漂移。若某个 `TaskInfo` 缺少 `retrieval_query`，controller 会在挑选工具前调用一次 TaskAnalyzer 补齐，保证检索器拿到的查询始终非空。
 
 完整映射直接转换的目的是：三种实验模式共享同一份任务语义，避免每种模式重新调用 LLM 造成分析结果漂移。
 
@@ -128,15 +132,16 @@ tool:
 定义于 `agent/task_analyzer.py`。
 
 ```text
-task_id      str   任务唯一标识，与 benchmark tasks.json 对应
-description  str   自然语言任务描述（检索主输入）
-task_type    str   bug_fix / feature_add / refactor / test_write / doc
-language     str   主要编程语言，未知为 unknown
-intents      list[str]  操作意图关键词
-complexity   str   simple / medium / complex（构造时校验）
+task_id              str   任务唯一标识，与 benchmark tasks.json 对应
+description          str   自然语言任务描述（发给模型；检索查询由分析阶段单独构造）
+task_type            str   bug_fix / feature_add / refactor / test_write / doc
+language             str   主要编程语言，未知为 unknown
+retrieval_query      str   面向检索器的正向关键词；禁止否定词与工具名，缺失时由 controller 调 TaskAnalyzer 补齐
+negative_constraints list[str]  任务明确禁止的操作，供评价 / 过滤 / 提示使用
+complexity           str   simple / medium / complex（构造时校验）
 ```
 
-提供 `to_dict()` / `from_dict()`。
+提供 `to_dict()` / `from_dict()`。`retrieval_query` 与 `negative_constraints` 由预标注流程写入 `tasks.json`，实验运行时直接读取，不调用 LLM 重新分析。
 
 ### 4.2 ToolDefinition
 
@@ -249,7 +254,7 @@ class TaskAnalyzer:
     def analyze(self, task_description: str, task_id: str | None = None) -> TaskInfo
 ```
 
-异常：`TaskAnalysisError`（调用失败、非 JSON、字段缺失或枚举非法）。
+异常：`TaskAnalysisError`（调用失败、非 JSON、字段缺失或枚举非法）。输出除基础字段外，还包含 `retrieval_query`（正向检索关键词）与 `negative_constraints`（禁止操作），供预标注流程写入 `tasks.json`。
 
 ### 5.3 TFIDFRetriever
 
@@ -261,8 +266,12 @@ class TFIDFRetriever:
 ```
 
 - 分词：英文标识符整体 + 下划线子词；中文连续片段输出单字 + 相邻双字；
+- 只消费已构造查询：`TaskInfo` 必须包含非空 `retrieval_query`，为空直接抛 `ValueError`；检索器不读 description，也不做否定清洗；
+- 查询词由分析阶段构造（`retrieval/query_utils.py`）：清洗否定约束后作为检索查询；
 - 排序稳定，同分保持注册顺序；
 - 未 `fit` 调用 `retrieve` 抛 `RuntimeError`；空工具库 / 空词表抛 `ValueError`。
+
+否定清洗是分析阶段的规则启发式，不处理复杂隐含否定；若 `TaskInfo` 缺少 `retrieval_query`，由 `AgentController` 调用一次 TaskAnalyzer 补齐，而不是在检索器里静默回退。
 
 ### 5.4 AdaptiveSelector
 
@@ -421,7 +430,8 @@ selected_tools、schema、循环轮数上限与结果记录方式完全一致，
 2. `description` / `search_hints` 的内容由 B 维护，检索逻辑由 A 维护；新增工具必须提供 hints；
 3. `benchmark/tasks.json` 的 `project_path` 必须指向 `benchmark/workspaces/<task_id>`；
 4. 实验层只消费 `AgentRunResult`，不得绕过 `AgentController` 直接调用工具；
-5. 真实 API Key、`.env`、`.devlogs/` 不进入版本库。
+5. 真实 API Key、`.env`、`.devlogs/` 不进入版本库；
+6. 任务预标注由 B 执行：`retrieval_query` 只能从 `description` 生成（不得参考 `expected_tools`、不得含否定词或工具名），否定要求写入 `negative_constraints`；默认只补缺失字段，人工复核后提交，描述变更时需重新生成。
 
 ---
 
@@ -429,7 +439,7 @@ selected_tools、schema、循环轮数上限与结果记录方式完全一致，
 
 | 项目 | 状态 |
 |---|---|
-| 单元测试 | 114 项，`python -m unittest discover -s tests -v` 全部通过 |
+| 单元测试 | 129 项，`python -m unittest discover -s tests -v` 全部通过 |
 | 覆盖范围 | LLMClient（Mock）、TaskAnalyzer、TF-IDF、AdaptiveSelector、AgentController（单轮 / 多轮 / 异常）、Benchmark 结构、工具注册与 schema |
 | 真实 Qwen4-Max | 已完成文本调用与三种模式 Function Calling 冒烟（`scripts/test_qwen_api.py`、`scripts/test_qwen_agent.py`） |
 | 检索诊断 | `scripts/probe_retrieval.py`：排名、交集词、recall@K、跨工具噪声词 |
