@@ -177,7 +177,7 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="read_file",
         search_hints=[
-            "阅读", "查看", "浏览", "定位", "分析", "异常", "逻辑", "数据", "加载", "代码", "读取", "检查",
+            "阅读", "查看", "浏览", "分析", "异常", "逻辑", "数据", "加载", "代码", "读取", "检查",
             "read", "open", "view", "source",
         ],
     ),
@@ -297,7 +297,7 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         search_hints=[
             "修改", "改动", "改成", "替换", "修复", "修正", "更新", "补全",
             "重构", "拆分", "提取", "消除", "统一", "处理", "新增", "实现", 
-            "编写", "编辑", "添加", "补充",
+            "编写", "编辑", "添加", "补充", "清理", "删除",
             "edit", "modify", "replace", "change", "fix", "update", "refactor",
         ],
     ),
