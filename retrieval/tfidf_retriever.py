@@ -2,9 +2,17 @@
 
 实现要点：
 - 使用 ``sklearn.feature_extraction.text.TfidfVectorizer`` 对工具描述建立索引；
-- 中文不依赖默认分词（默认按空格切分对中文无效），改为「单字 + 相邻双字」切分，
+- 中文不依赖默认分词（默认按空格切分对中文无效），改为「相邻双字」滑窗切分，
+  不再输出单字（单字会带来「清除/除零」「差异/异常」这类碎片误匹配）；
   英文/标识符按单词切分（``read_file`` 同时保留整体与下划线子词）；
+- **英文大小写不敏感**：``TF-IDF``、``Tfidf``、``tfidf`` 视为同一个词项。
+  该保证由两处共同实现——``_tokenize`` 内对每个英文词做 ``casefold()``，
+  且 ``TfidfVectorizer(lowercase=True)`` 在分词前再折叠一次（幂等）。
+  两层都保留是刻意的：任何一层被替换掉，大小写不敏感都不会悄悄失效；
 - 查询（任务描述）与工具矩阵之间使用 Cosine Similarity 计算相关性；
+- **文档长度补偿**：cosine 前 l2 归一化会让 hints 多的工具把单词权重摊薄，
+  命中同一个词反而吃亏。因此再乘一个 ``log1p(文档词项数)`` 归一化后的因子，
+  用对数的压缩特性抵消大部分稀释，而不是完全抹掉长度差异；
 - 查询由分析阶段构造（``retrieval_query``）：检索器只消费现成查询词，
   不做否定清洗，也不回退到 description；
 - 结果按分数降序排列，分数相同时保持 ``fit()`` 时的工具注册顺序（稳定排序）。
@@ -15,6 +23,7 @@
 from __future__ import annotations
 
 import logging
+import numpy as np
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Optional, Sequence, Union
@@ -42,7 +51,8 @@ def _tokenize(text: str) -> List[str]:
     规则：
     - 英文单词、标识符、数字整体保留，并统一转小写；
     - 含下划线的标识符额外拆分出子词（``read_file`` -> ``read``、``file``）；
-    - 连续中文片段同时输出单字与相邻双字，例如「运行测试」-> 运/行/测/试/运行/行测/测试。
+    - 连续中文片段输出相邻双字，例如「运行测试」-> 运行/行测/测试；
+      不输出单字，避免碎片误匹配。
 
     采用字级 n-gram 而非中文分词器，可以避免依赖额外词典，同时保留较好的中文匹配能力。
     """
@@ -52,7 +62,8 @@ def _tokenize(text: str) -> List[str]:
 
     tokens: List[str] = []
     for word in _WORD_PATTERN.findall(text):
-        word = word.lower()
+        # casefold 比 lower 更彻底（'ß' -> 'ss'、'İ' -> 'i̇'），是「无视大小写」的标准折叠
+        word = word.casefold()
         tokens.append(word)
         if "_" in word:
             tokens.extend(part for part in word.split("_") if part)
@@ -89,6 +100,7 @@ class TFIDFRetriever:
         self._tool_names: List[str] = []
         self._vectorizer: Optional[TfidfVectorizer] = None
         self._tool_matrix = None
+        self._length_factor: Optional[np.ndarray] = None
         self._is_fitted: bool = False
 
     @property
@@ -117,7 +129,7 @@ class TFIDFRetriever:
         documents = [self._build_document(definition) for definition in definitions]
         vectorizer = TfidfVectorizer(
             tokenizer=_tokenize,
-            lowercase=False,
+            lowercase=True,
             token_pattern=None,
             sublinear_tf=True,
         )
@@ -130,6 +142,11 @@ class TFIDFRetriever:
         self._tool_names = [definition.name for definition in definitions]
         self._vectorizer = vectorizer
         self._tool_matrix = tool_matrix
+        # hints 条目越多，l2 归一化后每个词的权重被摊得越薄，命中同一个词也拿不到高分。
+        # 用 log1p 压缩长度差异后作为补偿因子（最长文档 = 1.0，其余按对数比例下调），
+        # 既抵消稀释，又不像线性/幂次那样把长短文档的差距拉得太开。
+        lengths = np.log1p(np.maximum([len(_tokenize(doc)) for doc in documents], 1))
+        self._length_factor = lengths / lengths.max()
         self._is_fitted = True
         logger.info(
             "TF-IDF 索引构建完成：%d 个工具，%d 个词项",
@@ -166,7 +183,7 @@ class TFIDFRetriever:
 
         query = self._build_query(task_info)
         query_vector = self._vectorizer.transform([query])
-        scores = cosine_similarity(query_vector, self._tool_matrix)[0]
+        scores = cosine_similarity(query_vector, self._tool_matrix)[0] * self._length_factor
 
         # sorted 为稳定排序：分数相同时保持工具注册顺序
         order = sorted(range(len(scores)), key=lambda index: scores[index], reverse=True)

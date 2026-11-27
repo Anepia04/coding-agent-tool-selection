@@ -10,10 +10,34 @@
                   「参数怎么填」。应保持简洁、以功能与约束为主。
 
 ``search_hints``  给**检索器**看：只参与 TF-IDF 文档构建，**不会**进入 schema，
-                  因此不产生任何模型 token 成本。用于补充任务描述中可能出现
-                  的场景词、同义词、动作词，弥补「功能描述与任务措辞不重合」
-                  导致的相关性丢失（例如任务只说「修改 calculator.py」，
-                  而 read_file 的功能描述里并不会出现「修改」）。
+                  因此不产生任何模型 token 成本。
+
+search_hints 的编写规则
+-----------------------
+1. **中文只用 2 字词**。分词器对中文做「相邻双字」切分，因此：
+   - 2 字词 → 恰好 1 个 token（干净）
+   - 3 字词 → 2 个 token，其中 1 个是跨边界碎片（如「运行测试」→ 运行/行测/测试，
+     「行测」不是词）
+   - 4 字词 → 3 个 token，其中 2 个是碎片（「修改代码」→ 修改/改代/代码）
+
+   若 hints 也写成 3 字以上，任务侧同一个短语会产生多个碎片并与 hints 的碎片
+   重复命中，**一次语义命中被计成 2~3 次**，分数被虚高。只用 2 字词时，
+   任务侧的碎片（改代/读代/行测/据加/元测…）在 hints 里不存在，自然无法命中，
+   只有真正的概念词（修改/阅读/运行/数据/单元…）参与打分。
+
+2. **英文保留完整单词**（不被 n-gram 切分），用于命中工具名、技术术语。
+
+3. **每个高频词只分配给一个工具**，避免多个工具抢同一个词把 IDF 拉平：
+       代码 / 修改 / 重构 → edit_file
+       阅读 / 查看 / 定位 → read_file
+       测试 / 运行 / 验证 → run_tests
+       查找 / 引用 / 调用 → search_code
+       函数 / 符号 / 定义 → find_symbol
+       目录 / 项目 / 模块 → list_files
+
+4. **按功能相似度排序**（见下方分组注释）。顺序会影响三处：注册表顺序、
+   baseline 模式下模型看到的工具顺序、以及 TF-IDF 同分时的稳定排序 tie-break，
+   所以把同类工具放在一起。
 
 负责成员：成员 B（描述文本与工具清单），成员 A（数据结构约束）
 
@@ -24,7 +48,7 @@
         "category": str,         # 工具分类，取值见 config.TOOL_CATEGORIES
         "parameters": dict,      # JSON Schema（type=object）
         "function_name": str,    # tools.implementations 中的函数名
-        "search_hints": list,    # 面向检索器的场景/同义词（不进 schema）
+        "search_hints": list,    # 面向检索器的 2 字场景词（不进 schema）
     }
 """
 
@@ -51,7 +75,7 @@ class ToolDefinition:
             ``{"type": "object", "properties": {...}, "required": [...]}``。
         function_name: 对应 ``tools.implementations`` 中的函数名，
             为空时默认与 ``name`` 相同。
-        search_hints: 面向检索器的场景词、同义词与动作词，只参与 TF-IDF
+        search_hints: 面向检索器的 2 字场景词与英文术语，只参与 TF-IDF
             文档构建，不会发送给模型。
     """
 
@@ -127,27 +151,20 @@ class ToolDefinition:
 
 
 # ---------------------------------------------------------------------------
-# 工具清单
+# 工具清单（按功能相似度分组排序）
 #
-# description：给模型看的功能说明（进 schema，有 token 成本）
-# search_hints：给检索器看的场景/同义词（不进 schema，零 token 成本）
+# 分组顺序：观察 → 修改 → 验证 → 状态 → 兜底。
+# 同组内按「操作粒度」由小到大排列，便于检索同分时的 tie-break 落在正确一侧。
 #
-# 编写约定：
-# 1. description 不写「实验工作目录内」这类所有工具共有的模板前缀——它在 16 个
-#    文档里同时出现，IDF 趋近于 0，只稀释向量、不提供区分度；
-# 2. search_hints 按「动作阶段」分配独占词，避免多个工具抢同一个词：
-#       read_file   -> 查看 / 定位 / 阅读
-#       edit_file   -> 修改 / 替换 / 改
-#       write_file  -> 新建 / 保存 / 覆盖
-#       run_tests   -> 验证 / 回归 / 测试
-# 3. 同一领域的工具用一种前缀区分：file 类用动作词，git 类用状态词。
+# hints 规则见模块 docstring：中文一律 2 字，每个高频词只归属一个工具。
 # ---------------------------------------------------------------------------
 
 EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
-    # ---------------- 文件读取与列举 ----------------
+    # ==================== 一、观察类（只读，不改动任何文件） ====================
+    # 逐级细化：整文件读取 → 目录遍历 → 单文件属性 → 文本搜索 → 符号解析 → 标记扫描
     ToolDefinition(
         name="read_file",
-        description="读取某个文本文件的内容，可按行区间截取。",
+        description="读取文本文件的内容，可按行区间截取。",
         category="file",
         parameters={
             "type": "object",
@@ -160,15 +177,8 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="read_file",
         search_hints=[
-            # 显式动作与同义说法（书面语为主）
-            "查看", "浏览", "阅读", "通读", "打开", "读取", "载入", "看代码",
-            "翻阅", "审阅", "检视", "检查内容", "确认内容",
-            # 隐性语境：任何「改代码 / 查问题」任务的第一步都要先读
-            "修改前", "修复前", "改动前", "重构前", "排查问题", "定位问题",
-            "分析原因", "理解现有", "了解实现", "确认现状", "查看代码",
-            # 对象与英文术语
-            "源码", "源代码", "原始内容", "文件内容", "函数实现", "行区间",
-            "read", "open", "view", "inspect", "source",
+            "阅读", "查看", "浏览", "定位", "分析", "异常", "逻辑", "数据", "加载", "代码", "读取", "检查",
+            "read", "open", "view", "source",
         ],
     ),
     ToolDefinition(
@@ -185,11 +195,8 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="list_files",
         search_hints=[
-            "列出文件", "枚举文件", "遍历目录", "扫描目录", "有哪些文件", "文件列表",
-            "项目结构", "目录结构", "工程布局", "模块划分", "目录树", "项目组成",
-            "文件位置", "查找文件", "目录组织",
-            "目录", "文件夹", "路径", "子目录",
-            "ls", "list", "dir", "tree", "find", "glob", "directory",
+            "目录", "结构", "项目", "文件", "列表", "布局", "路径", "列出",
+            "ls", "list", "tree", "dir", "glob",
         ],
     ),
     ToolDefinition(
@@ -205,13 +212,70 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="file_info",
         search_hints=[
-            "文件大小", "多少行", "行数", "文件属性", "体积", "修改时间",
-            "多大", "行数统计", "文件信息", "规模", "最近修改",
-            "stat", "size", "lines", "info", "mtime",
+            "属性", "大小", "行数", "体积", "规模", "统计", "文件", "时间",
+            "stat", "size", "info", "lines",
+        ],
+    ),
+    ToolDefinition(
+        name="search_code",
+        description="按关键词在源码中搜索文本出现位置，返回文件、行号与命中行。",
+        category="code_search",
+        parameters={
+            "type": "object",
+            "properties": {
+                "keyword": {"type": "string", "description": "要搜索的关键词、函数名或变量名"},
+                "directory": {"type": "string", "description": "搜索起始目录"},
+                "file_pattern": {"type": "string", "description": "限定文件类型，如 *.py"},
+            },
+            "required": ["keyword"],
+        },
+        function_name="search_code",
+        search_hints=[
+            "搜索", "查找", "检索", "引用", "调用", "使用", "位置", "出现",
+            "代码", "阅读", "行号", "定位", "寻找",
+            "search", "grep", "find", "reference", "usage",
+        ],
+    ),
+    ToolDefinition(
+        name="find_symbol",
+        description="解析源码中的函数与类定义，列出符号名、所在文件与行号。",
+        category="code_search",
+        parameters={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "按符号名过滤，可选"},
+                "directory": {"type": "string", "description": "搜索起始目录"},
+                "file_pattern": {"type": "string", "description": "限定文件类型，如 *.py"},
+            },
+            "required": [],
+        },
+        function_name="find_symbol",
+        search_hints=[
+            "函数", "符号", "定义", "声明", "接口", "签名", "公共", "参数", "代码",
+            "symbol", "definition", "ast", "signature", "class", "function",
+        ],
+    ),
+    ToolDefinition(
+        name="list_todos",
+        description="扫描源码中的 TODO、FIXME 等未完成标记。",
+        category="code_search",
+        parameters={
+            "type": "object",
+            "properties": {
+                "directory": {"type": "string", "description": "搜索起始目录"},
+                "file_pattern": {"type": "string", "description": "限定文件类型，如 *.py"},
+            },
+            "required": [],
+        },
+        function_name="list_todos",
+        search_hints=[
+            "待办", "标记", "遗留", "完成", "废弃",
+            "todo", "fixme", "hack", "pending",
         ],
     ),
 
-    # ---------------- 文件修改 ----------------
+    # ==================== 二、修改类（写操作） ====================
+    # 按侵入范围：改片段 → 写整文件 → 打补丁 → 移路径 → 删除
     ToolDefinition(
         name="edit_file",
         description=(
@@ -231,16 +295,10 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="edit_file",
         search_hints=[
-            # 显式动作与同义
-            "修改", "改动", "改成", "改为", "改掉", "替换", "更换", "更新",
-            "调整", "修正", "更正", "纠正", "改写", "改造",
-            # 隐性语境：具体到「改哪一行、改哪个判断」
-            "改一行", "改几行", "局部修改", "修改代码", "修正逻辑",
-            "修正判断", "添加判断", "去掉冗余", "修复错误",
-            "调整实现", "修改函数", "修改条件", "替换实现",
-            # 对象与英文术语
-            "代码行", "语句", "表达式", "判断条件", "返回值", "函数体",
-            "edit", "modify", "replace", "change", "fix", "update",
+            "修改", "改动", "改成", "替换", "修复", "修正", "更新", "补全",
+            "重构", "拆分", "提取", "消除", "统一", "处理", "新增", "实现", 
+            "编写", "编辑", "添加", "补充",
+            "edit", "modify", "replace", "change", "fix", "update", "refactor",
         ],
     ),
     ToolDefinition(
@@ -258,11 +316,9 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="write_file",
         search_hints=[
-            "新建文件", "创建文件", "生成文件", "写入文件", "保存文件", "写文件",
-            "输出文件", "覆盖写入", "整体替换", "整文件替换", "新建完整",
-            "新增文件", "补充文件", "新增模块", "从无到有", "初始化文件",
-            "完整内容",
-            "create", "write", "generate", "save", "new file", "overwrite",
+            "新增", "创建", "生成", "编写", "新建", "写入", "保存", "补充",
+            "修改", "文件",
+            "create", "write", "generate", "save", "new",
         ],
     ),
     ToolDefinition(
@@ -278,28 +334,8 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="apply_patch",
         search_hints=[
-            "打补丁", "应用补丁", "补丁", "批量修改", "多处改动", "多处修改",
-            "一次改完", "统一格式", "整体替换", "diff 补丁",
-            "patch", "apply", "unified diff", "hunk",
-        ],
-    ),
-    ToolDefinition(
-        name="delete_path",
-        description="删除不再需要的文件或空目录。",
-        category="file",
-        parameters={
-            "type": "object",
-            "properties": {
-                "path": {"type": "string", "description": "相对工作目录的文件或空目录路径"},
-            },
-            "required": ["path"],
-        },
-        function_name="delete_path",
-        search_hints=[
-            "删除", "删掉", "移除", "去掉", "清理", "清除", "销毁",
-            "废弃文件", "冗余文件", "临时文件", "不再需要", "多余内容", "旧文件",
-            "删除目录", "清理冗余",
-            "delete", "remove", "rm", "clean", "drop",
+            "补丁", "批量", "多处",
+            "patch", "apply", "unified",
         ],
     ),
     ToolDefinition(
@@ -317,78 +353,30 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="move_path",
         search_hints=[
-            "移动", "重命名", "改名", "搬迁", "归档", "移位", "调整路径",
-            "更换路径", "调整目录结构", "模块拆分", "重命名文件", "整理工程",
-            "路径变更", "移入子目录",
-            "move", "rename", "mv", "relocate", "reorganize",
+            "移动", "命名", "改名", "迁移", "归档", "导入",
+            "move", "rename", "relocate",
+        ],
+    ),
+    ToolDefinition(
+        name="delete_path",
+        description="删除不再需要的文件或空目录。",
+        category="file",
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "相对工作目录的文件或空目录路径"},
+            },
+            "required": ["path"],
+        },
+        function_name="delete_path",
+        search_hints=[
+            "删除", "清理", "移除", "去掉", "孤立",
+            "delete", "remove", "clean", "drop",
         ],
     ),
 
-    # ---------------- 代码搜索与符号 ----------------
-    ToolDefinition(
-        name="search_code",
-        description="按关键词在源码中搜索文本出现位置，返回文件、行号与命中行。",
-        category="code_search",
-        parameters={
-            "type": "object",
-            "properties": {
-                "keyword": {"type": "string", "description": "要搜索的关键词、函数名或变量名"},
-                "directory": {"type": "string", "description": "搜索起始目录"},
-                "file_pattern": {"type": "string", "description": "限定文件类型，如 *.py"},
-            },
-            "required": ["keyword"],
-        },
-        function_name="search_code",
-        search_hints=[
-            "搜索", "查找", "检索", "定位", "全局搜索", "查找引用", "搜索代码",
-            "哪里用到", "谁调用", "被哪些地方使用", "出现位置", "引用点", "调用点",
-            "找到所有引用", "查找位置", "谁用了",
-            "关键词", "函数名", "变量名", "字符串",
-            "search", "grep", "find", "rg", "locate", "reference", "usage",
-        ],
-    ),
-    ToolDefinition(
-        name="find_symbol",
-        description="解析源码中的函数与类定义，列出符号名、所在文件与行号。",
-        category="code_search",
-        parameters={
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "按符号名过滤，可选"},
-                "directory": {"type": "string", "description": "搜索起始目录"},
-                "file_pattern": {"type": "string", "description": "限定文件类型，如 *.py"},
-            },
-            "required": [],
-        },
-        function_name="find_symbol",
-        search_hints=[
-            "函数定义", "类定义", "符号", "接口", "声明", "函数签名", "方法列表",
-            "在哪定义", "在哪实现", "定义位置", "有哪些函数", "有哪些类",
-            "代码结构", "导出符号",
-            "symbol", "definition", "ast", "declaration", "signature", "class",
-        ],
-    ),
-    ToolDefinition(
-        name="list_todos",
-        description="扫描源码中的 TODO、FIXME 等未完成标记。",
-        category="code_search",
-        parameters={
-            "type": "object",
-            "properties": {
-                "directory": {"type": "string", "description": "搜索起始目录"},
-                "file_pattern": {"type": "string", "description": "限定文件类型，如 *.py"},
-            },
-            "required": [],
-        },
-        function_name="list_todos",
-        search_hints=[
-            "待办", "TODO", "FIXME", "HACK", "未完成", "遗留问题", "待处理",
-            "未处理的", "待实现", "临时标记", "待完成", "遗留",
-            "todo", "fixme", "pending", "hack",
-        ],
-    ),
-
-    # ---------------- 测试与语法 ----------------
+    # ==================== 三、验证类 ====================
+    # 行为验证 → 语法验证
     ToolDefinition(
         name="run_tests",
         description="运行测试文件或测试套件，返回通过、失败与错误数量。",
@@ -403,11 +391,8 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="run_tests",
         search_hints=[
-            "跑测试", "运行测试", "执行测试", "跑用例", "单元测试", "回归测试",
-            "验证改动", "确认没破坏", "保证通过", "测试是否通过", "回归验证",
-            "修复后验证", "确保正确", "检查是否正常", "测试失败",
-            "检验结果", "验证通过",
-            "test", "pytest", "unittest", "verify", "regression",
+            "测试", "运行", "单元", "用例", "验证", "覆盖", "通过", "失败", "回归", "断言",
+            "test", "pytest", "unittest", "verify", "run", "assert",
         ],
     ),
     ToolDefinition(
@@ -424,13 +409,13 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="check_syntax",
         search_hints=[
-            "语法", "语法检查", "编译检查", "静态检查", "检查语法", "语法错误",
-            "能否运行", "缩进问题", "导入错误", "代码检查", "解析失败",
+            "语法", "检查", "静态", "解析", "缩进", "类型",
             "syntax", "compile", "lint", "check", "parse",
         ],
     ),
 
-    # ---------------- Git 与命令 ----------------
+    # ==================== 四、状态类（Git） ====================
+    # 变更清单 → 具体差异
     ToolDefinition(
         name="git_status",
         description="查看仓库工作区状态，列出被修改、新增、删除的文件。",
@@ -438,10 +423,8 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         parameters={"type": "object", "properties": {}, "required": []},
         function_name="git_status",
         search_hints=[
-            "工作区状态", "查看状态", "改动清单", "变更清单", "改了哪些文件",
-            "文件变更", "未提交", "待提交", "修改记录",
-            "工作区", "仓库状态",
-            "git status", "changed files", "working tree", "staged",
+            "状态", "变更", "提交", "工作", "清单",
+            "status", "staged", "working",
         ],
     ),
     ToolDefinition(
@@ -457,11 +440,12 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="git_diff",
         search_hints=[
-            "差异", "对比", "对比改动", "改了什么", "变化内容", "前后对比",
-            "代码变更", "查看具体改动",
-            "diff", "compare", "changes", "patch view",
+            "差异", "对比", "变化", "记录",
+            "diff", "compare", "changes",
         ],
     ),
+
+    # ==================== 五、兜底（受限 shell） ====================
     ToolDefinition(
         name="run_command",
         description="执行受限的 shell 命令，用于构建、检查等操作。",
@@ -477,9 +461,8 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="run_command",
         search_hints=[
-            "命令行", "shell", "执行命令", "运行命令", "构建", "安装",
-            "打包", "启动", "运行脚本", "批处理", "命令",
-            "command", "exec", "run", "build", "install",
+            "命令", "执行", "构建", "安装", "打包", "脚本",
+            "command", "shell", "exec", "build", "install",
         ],
     ),
 ]

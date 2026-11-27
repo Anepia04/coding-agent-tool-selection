@@ -6,7 +6,9 @@
     "language": "python",
     "task_type": "bug_fix",
     "complexity": "simple",
-    "success_criteria": "全部单元测试通过；除零场景返回明确的错误提示而不是直接崩溃。"
+    "success_criteria": "全部单元测试通过；除零场景返回明确的错误提示而不是直接崩溃。",
+    "retrieval_query": "sample_project calculator.py 除零异常 修复 读取代码 定位除法逻辑 添加异常处理 编写单元测试 覆盖除零场景 运行测试 验证结果",
+    "negative_constraints": []
   },
   {
     "task_id": "task_002",
@@ -15,7 +17,9 @@
     "language": "python",
     "task_type": "feature_add",
     "complexity": "medium",
-    "success_criteria": "slugify 函数实现符合描述；新增测试通过；原有测试不被破坏。"
+    "success_criteria": "slugify 函数实现符合描述；新增测试通过；原有测试不被破坏。",
+    "retrieval_query": "sample_project 文本工具模块 slugify 函数 新增 单元测试 读取文本工具模块 定位文本工具模块 设计 slugify 实现 编写单元测试 运行测试 验证测试",
+    "negative_constraints": []
   },
   {
     "task_id": "task_003",
@@ -24,7 +28,9 @@
     "language": "python",
     "task_type": "refactor",
     "complexity": "complex",
-    "success_criteria": "重构后公共接口行为不变；全部测试通过；函数复杂度下降。"
+    "success_criteria": "重构后公共接口行为不变；全部测试通过；函数复杂度下降。",
+    "retrieval_query": "数据加载模块 重构 拆分过长函数 消除重复代码 读取现有代码 分析函数结构 提取公共逻辑 调整模块实现 运行现有测试 验证测试通过",
+    "negative_constraints": []
   },
   {
     "task_id": "task_004",
@@ -33,7 +39,9 @@
     "language": "python",
     "task_type": "bug_fix",
     "complexity": "medium",
-    "success_criteria": "所有测试通过；失败用例对应的缺陷被修复而不是被删除或跳过。"
+    "success_criteria": "所有测试通过；失败用例对应的缺陷被修复而不是被删除或跳过。",
+    "retrieval_query": "sample_project 测试套件 运行 测试输出 失败用例 定位 根因 相关代码 修复代码 重新运行测试 验证通过",
+    "negative_constraints": []
   },
   {
     "task_id": "task_005",
@@ -42,7 +50,9 @@
     "language": "python",
     "task_type": "refactor",
     "complexity": "medium",
-    "success_criteria": "legacy_io 模块及其测试被删除；代码中不再有对它的引用；其余测试全部通过。"
+    "success_criteria": "legacy_io 模块及其测试被删除；代码中不再有对它的引用；其余测试全部通过。",
+    "retrieval_query": "sample_project legacy_io 定位 模块 查找 引用 删除 模块 清理 导入 移除 调用 更新 依赖 验证 构建 测试",
+    "negative_constraints": []
   },
   {
     "task_id": "task_006",
@@ -51,7 +61,9 @@
     "language": "python",
     "task_type": "doc",
     "complexity": "simple",
-    "success_criteria": "每个公共函数都有说明用途、参数与返回值的 docstring；全部测试通过。"
+    "success_criteria": "每个公共函数都有说明用途、参数与返回值的 docstring；全部测试通过。",
+    "retrieval_query": "sample_project calculator 模块 公共函数 docstring 定位 识别 检查 补充 文档注释 校验语法",
+    "negative_constraints": []
   },
   {
     "task_id": "task_007",
@@ -60,7 +72,9 @@
     "language": "python",
     "task_type": "bug_fix",
     "complexity": "medium",
-    "success_criteria": "空列表输入不再抛出异常并返回空结果；新增覆盖该场景的测试；全部测试通过。"
+    "success_criteria": "空列表输入不再抛出异常并返回空结果；新增覆盖该场景的测试；全部测试通过。",
+    "retrieval_query": "sample_project 空列表 输入 索引越界 修复 返回空结果 读取代码 定位异常 添加边界检查 验证行为",
+    "negative_constraints": []
   },
   {
     "task_id": "task_008",
@@ -69,7 +83,9 @@
     "language": "python",
     "task_type": "feature_add",
     "complexity": "medium",
-    "success_criteria": "非法参数抛出 ValueError 且消息可读；合法参数行为不变；新增测试通过。"
+    "success_criteria": "非法参数抛出 ValueError 且消息可读；合法参数行为不变；新增测试通过。",
+    "retrieval_query": "配置加载函数 参数校验 类型校验 空值校验 ValueError 读取函数 修改代码 验证",
+    "negative_constraints": []
   },
   {
     "task_id": "task_009",
@@ -78,7 +94,9 @@
     "language": "python",
     "task_type": "refactor",
     "complexity": "medium",
-    "success_criteria": "重复逻辑只保留一处实现；原调用点全部改为调用新函数；全部测试通过。"
+    "success_criteria": "重复逻辑只保留一处实现；原调用点全部改为调用新函数；全部测试通过。",
+    "retrieval_query": "sample_project 代码 读取 重复 取值转换逻辑 定位 公共函数 提取 创建 原有调用 替换 行为 一致性 验证",
+    "negative_constraints": []
   },
   {
     "task_id": "task_010",
@@ -87,7 +105,9 @@
     "language": "python",
     "task_type": "bug_fix",
     "complexity": "complex",
-    "success_criteria": "函数签名与所有调用方一致；不再出现位置参数错位；全部测试通过。"
+    "success_criteria": "函数签名与所有调用方一致；不再出现位置参数错位；全部测试通过。",
+    "retrieval_query": "定位 数据加载函数 调用方 分析 参数命名 参数顺序 统一 修改函数签名 更新调用点 检查引用 验证调用",
+    "negative_constraints": []
   },
   {
     "task_id": "task_011",
@@ -96,7 +116,9 @@
     "language": "python",
     "task_type": "refactor",
     "complexity": "complex",
-    "success_criteria": "两个模块职责清晰且无循环依赖；旧模块路径的导入全部更新；全部测试通过。"
+    "success_criteria": "两个模块职责清晰且无循环依赖；旧模块路径的导入全部更新；全部测试通过。",
+    "retrieval_query": "sample_project utils 模块 分析 拆分 text_utils num_utils 创建模块 迁移函数 更新导入路径 更新引用 验证导入",
+    "negative_constraints": []
   },
   {
     "task_id": "task_012",
@@ -105,7 +127,11 @@
     "language": "python",
     "task_type": "test_write",
     "complexity": "medium",
-    "success_criteria": "异常分支均有测试覆盖；新增测试通过；被测代码未被修改。"
+    "success_criteria": "异常分支均有测试覆盖；新增测试通过；被测代码未被修改。",
+    "retrieval_query": "sample_project 异常分支 测试覆盖 分析 补充 单元测试 读取源代码 读取测试代码 识别异常分支 设计测试用例 编写测试 运行测试 验证测试结果",
+    "negative_constraints": [
+      "不修改被测代码"
+    ]
   },
   {
     "task_id": "task_013",
@@ -114,7 +140,9 @@
     "language": "python",
     "task_type": "doc",
     "complexity": "medium",
-    "success_criteria": "README 中的命令可直接执行成功；目录结构与实际一致；不再提到已不存在的文件。"
+    "success_criteria": "README 中的命令可直接执行成功；目录结构与实际一致；不再提到已不存在的文件。",
+    "retrieval_query": "sample_project README 测试运行命令 项目结构 测试目录 更新 读取文档 检查目录 识别命令 校验一致性",
+    "negative_constraints": []
   },
   {
     "task_id": "task_014",
@@ -123,7 +151,9 @@
     "language": "python",
     "task_type": "feature_add",
     "complexity": "simple",
-    "success_criteria": "clamp 函数实现正确且可从包入口导入；边界值行为符合预期。"
+    "success_criteria": "clamp 函数实现正确且可从包入口导入；边界值行为符合预期。",
+    "retrieval_query": "新增 clamp 函数 数值 区间 限制 导出 包入口 读取项目结构 读取包入口 修改包入口 实现函数 验证导出",
+    "negative_constraints": []
   },
   {
     "task_id": "task_015",
@@ -132,7 +162,9 @@
     "language": "python",
     "task_type": "bug_fix",
     "complexity": "simple",
-    "success_criteria": "所有错误提示统一为中文且包含原因；相关测试断言同步更新并全部通过。"
+    "success_criteria": "所有错误提示统一为中文且包含原因；相关测试断言同步更新并全部通过。",
+    "retrieval_query": "sample_project 错误提示文案 项目约定 中文文案 具体原因 定位项目文件 读取项目约定 读取错误提示 比对文案规范 修改提示文案 补充原因说明 校验文案一致性",
+    "negative_constraints": []
   },
   {
     "task_id": "task_016",
@@ -141,7 +173,9 @@
     "language": "python",
     "task_type": "refactor",
     "complexity": "medium",
-    "success_criteria": "废弃函数被删除；无残留引用与导入；TODO/FIXME 标记被处理；全部测试通过。"
+    "success_criteria": "废弃函数被删除；无残留引用与导入；TODO/FIXME 标记被处理；全部测试通过。",
+    "retrieval_query": "扫描 sample_project 查找 TODO FIXME 标记 定位 废弃代码路径 分析 函数调用关系 识别 冗余函数 删除 冗余函数 清理 代码引用 验证 项目",
+    "negative_constraints": []
   },
   {
     "task_id": "task_017",
@@ -150,7 +184,9 @@
     "language": "python",
     "task_type": "feature_add",
     "complexity": "complex",
-    "success_criteria": "cache 模块被数据加载流程实际调用；重复读取命中缓存；新增测试通过且不影响原有行为。"
+    "success_criteria": "cache 模块被数据加载流程实际调用；重复读取命中缓存；新增测试通过且不影响原有行为。",
+    "retrieval_query": "新增 cache 模块 字典缓存 数据加载流程 接入缓存 读取数据加载代码 创建缓存模块 修改数据加载逻辑 验证缓存生效",
+    "negative_constraints": []
   },
   {
     "task_id": "task_018",
@@ -159,7 +195,9 @@
     "language": "python",
     "task_type": "bug_fix",
     "complexity": "medium",
-    "success_criteria": "中文与常见非 ASCII 输入返回正确结果；新增覆盖该场景的测试；全部测试通过。"
+    "success_criteria": "中文与常见非 ASCII 输入返回正确结果；新增覆盖该场景的测试；全部测试通过。",
+    "retrieval_query": "字符串处理函数 Unicode 输入 乱码 修复 定位代码 读取函数 分析编码 修改实现 验证输出",
+    "negative_constraints": []
   },
   {
     "task_id": "task_019",
@@ -168,7 +206,9 @@
     "language": "python",
     "task_type": "test_write",
     "complexity": "simple",
-    "success_criteria": "零与负数场景均有测试；新增测试通过；若发现缺陷则以测试暴露而不擅自改动被测代码。"
+    "success_criteria": "零与负数场景均有测试；新增测试通过；若发现缺陷则以测试暴露而不擅自改动被测代码。",
+    "retrieval_query": "sample_project divide 函数 测试用例 除数为零 负数 场景 覆盖 定位函数 读取测试文件 编写测试 断言 异常 返回值 边界条件 运行测试 验证覆盖",
+    "negative_constraints": []
   },
   {
     "task_id": "task_020",
@@ -177,6 +217,8 @@
     "language": "python",
     "task_type": "doc",
     "complexity": "complex",
-    "success_criteria": "全部公共函数都有参数与返回值类型注解；语法检查通过；全部测试通过。"
+    "success_criteria": "全部公共函数都有参数与返回值类型注解；语法检查通过；全部测试通过。",
+    "retrieval_query": "公共接口 类型注解 补全 读取代码 分析接口签名 修改代码 运行静态检查 运行现有测试 验证结果",
+    "negative_constraints": []
   }
 ]
