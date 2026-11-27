@@ -186,14 +186,15 @@ class TFIDFRetriever:
     @staticmethod
     def _build_document(definition: "ToolDefinition") -> str:
         """把工具定义拼接成用于向量化的检索文档。"""
-        parts = [
-            definition.name,
-            definition.category,
-            #definition.description,
-        ]
+        # description 只面向模型，不参与工具检索；search_hints 专门承载
+        # 任务中可能出现的场景词、同义词和动作词。
+        parts = [definition.name, definition.category]
         hints = getattr(definition, "search_hints", None) or []
         if hints:
             parts.append(" ".join(str(hint) for hint in hints))
+        elif getattr(definition, "description", None):
+            # 兼容尚未迁移 search_hints 的旧工具定义；新定义应始终提供 hints。
+            parts.append(str(definition.description))
         return " ".join(str(part) for part in parts if part)
 
     @staticmethod

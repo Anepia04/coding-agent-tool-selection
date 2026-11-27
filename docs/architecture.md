@@ -1,287 +1,284 @@
-# 系统架构与接口文档
+# 架构与接口契约
 
-> 项目：面向 Coding Agent 的任务感知动态工具选择方法研究
-> 适用范围：当前为骨架阶段，本文档定义各模块职责、统一数据结构、接口契约与协作方式；文中标注「待实现」的能力均以 `NotImplementedError` 占位。
+本文档描述当前代码的真实架构、模块边界、统一数据结构与跨模块接口。任何跨模块接口变更都必须同步更新本文档与对应测试。
 
-## 1. 系统整体架构
+---
 
-系统分为六个层次：实验入口（experiments）、Agent 控制（agent）、工具选择（retrieval）、工具库（tools）、数据（benchmark / results）、配置与文档（config / docs）。
+## 1. 系统总体架构
 
-```
-                         ┌──────────────────────────────────────────┐
-                         │      experiments/  （成员 C）             │
-                         │  run_baseline / run_fixed_topk           │
-                         │  run_adaptive_topk / evaluate            │
-                         └───────────────┬──────────────────────────┘
-                                         │ agent.run(task, mode, max_steps)
-                                         ▼
-┌───────────────────────────────────────────────────────────────────────────────┐
-│                        agent/AgentController （成员 A）                        │
-│                                                                               │
-│  ① TaskAnalyzer.analyze ──► TaskInfo                                          │
-│  ② _select_tools(task_info, mode) ──► selected_tool_names                     │
-│  ③ ToolRegistry.get_schemas(names) ──► tool schemas                           │
-│  ④ 循环：LLMClient.chat ──► ToolRegistry.execute_tool ──► 结果回填             │
-│  ⑤ 汇总 AgentRunResult                                                        │
-└───────┬───────────────────────────┬──────────────────────────┬────────────────┘
-        │ TaskInfo                  │ RetrievedTool            │ ToolDefinition
-        ▼                           ▼                          ▼
-┌───────────────────┐   ┌─────────────────────────┐   ┌─────────────────────────┐
-│ agent/            │   │ retrieval/ （成员 A）    │   │ tools/ （成员 B）        │
-│ task_analyzer.py  │   │ TFIDFRetriever          │   │ ToolDefinition          │
-│ llm_client.py     │   │ AdaptiveSelector        │   │ ToolRegistry            │
-└───────────────────┘   └─────────────────────────┘   │ implementations         │
-                                                      └─────────────────────────┘
-        ▲                           ▲                          ▲
-        │ benchmark/tasks.json      │                          │ workspace/（受控目录）
-        └──── benchmark/expected_tools.json（成员 B）            └── results/（成员 D）
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ 数据层  benchmark/ tasks.json · expected_tools.json · workspaces/ │
+└──────────────────────────────┬───────────────────────────────┘
+                               │ 任务定义 / 初始代码
+┌──────────────────────────────▼───────────────────────────────┐
+│ 实验层  experiments/                                          │
+│   run_baseline / run_fixed_topk / run_adaptive_topk（待实现）  │
+│   evaluate.py 指标接口（待实现） · schemas.py 结果结构         │
+└──────────────────────────────┬───────────────────────────────┘
+                               │ AgentController.run(task, mode, max_steps)
+┌──────────────────────────────▼───────────────────────────────┐
+│ 编排层  agent/                                                │
+│   TaskAnalyzer ──> TaskInfo                                   │
+│   AgentController：选工具 → get_schemas → chat → 执行 → 回填   │
+│   LLMClient：OpenAI 兼容接口封装                               │
+└───────────────┬──────────────────────────────┬───────────────┘
+                │ 检索 / 选择                   │ schema / 执行
+┌───────────────▼──────────────┐  ┌────────────▼───────────────┐
+│ 能力层  retrieval/            │  │ 能力层  tools/              │
+│   TFIDFRetriever              │  │   ToolRegistry              │
+│   AdaptiveSelector            │  │   definitions / implementations │
+└───────────────┬──────────────┘  └────────────┬───────────────┘
+                │ 配置 / 路径 / 环境变量        │ workspace 安全边界
+┌───────────────▼──────────────────────────────▼───────────────┐
+│ 基础设施  config.py（.env、路径、K、模式、workspace）          │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-关键设计原则：
+依赖方向自上而下：实验层依赖编排层，编排层依赖能力层与基础设施；`tools/` 与 `retrieval/` 不反向依赖 `agent/` 或 `experiments/`。
 
-1. **单向依赖**：`experiments → agent → retrieval → tools`，`tools` 不反向依赖任何上层模块；`config.py` 可被所有模块依赖。
-2. **接口隔离**：AgentController 只调用检索模块的 `retrieve()` / `select()`，不实现任何检索算法。
-3. **数据结构统一**：跨模块传递的对象全部为 dataclass，且都提供 `to_dict()`，可直接序列化写 CSV / JSON。
-4. **供应商无关**：`LLMClient` 是唯一与模型 API 耦合的位置。
-5. **安全边界**：工具的路径与命令操作限定在 `AgentConfig.workspace_dir`，由成员 B 在未来实现时强制校验。
+---
 
-## 2. 各模块职责
+## 2. 模块职责与边界
 
-### 2.1 agent/（成员 A）
-
-| 文件 | 职责 | 不负责 |
+| 文件 | 职责 | 边界 |
 |---|---|---|
-| `llm_client.py` | 构造请求、调用模型 API、解析文本 / tool_calls / usage，返回 `LLMResponse` | 不决定使用哪些工具 |
-| `task_analyzer.py` | 把自然语言任务转为 `TaskInfo`（类型、语言、意图、复杂度） | 不检索工具、不调用工具 |
-| `controller.py` | 编排完整任务流程、按模式选工具、驱动多轮工具调用、记录 `AgentRunResult` | 不实现 TF-IDF / Top-K / 自适应算法 |
+| `config.py` | 路径常量、枚举、分组配置、`.env` 加载、全局单例 | 不含业务逻辑；敏感信息只读环境变量 |
+| `agent/llm_client.py` | 消息发送、工具透传、文本 / tool_calls / Token 解析 | 不执行工具、不做任务分析 |
+| `agent/task_analyzer.py` | Prompt 约束 + JSON 解析 → `TaskInfo` | 不检索、不选择、不执行 |
+| `agent/controller.py` | 任务解析、工具选择、多轮循环、轨迹记录 | 不实现 TF-IDF / Top-K / 工具业务 |
+| `retrieval/tfidf_retriever.py` | 中文友好分词、TF-IDF 索引、Cosine 排序 | 不决定最终 K |
+| `retrieval/adaptive_selector.py` | fixed / adaptive 两种选择策略 | 不检索打分 |
+| `tools/definitions.py` | `ToolDefinition` 与 16 个工具元数据 | 不实现工具函数 |
+| `tools/implementations.py` | 工具函数、路径围栏、命令白名单、输出截断 | 不决定暴露哪些工具 |
+| `tools/registry.py` | 注册、查询、schema 生成、执行分发 | 参数业务校验由实现侧负责（当前为 TODO） |
+| `experiments/*.py` | 三组实验入口与指标 | 当前为接口占位，未实现 |
+| `experiments/schemas.py` | `ExperimentConfig` / `ExperimentResult` / CSV 列 | 结构由 A 维护，C 使用 |
+| `benchmark/` | 任务、工作区、Expected Tools | 当前 3 条占位任务 |
+| `scripts/` | 检索诊断、真实 API 联调 | 手动执行，不进入 unittest |
 
-### 2.2 tools/（成员 B）
+---
 
-| 文件 | 职责 |
-|---|---|
-| `definitions.py` | 定义 `ToolDefinition`；维护工具描述文本与参数 JSON Schema（检索质量的关键素材） |
-| `implementations.py` | 工具函数实现与安全边界（路径限制、命令白名单、超时） |
-| `registry.py` | 注册工具、按名查询、批量查询、schema 转换、执行分发 |
+## 3. 数据流
 
-### 2.3 retrieval/（成员 A，核心研究模块）
+### 3.1 任务输入
 
-| 文件 | 职责 |
-|---|---|
-| `tfidf_retriever.py` | `fit()` 建立工具描述索引；`retrieve()` 对任务打分并返回排好序的 `RetrievedTool` 列表 |
-| `adaptive_selector.py` | 在排序结果上执行 `fixed`（固定 K）或 `adaptive`（按复杂度动态 K）策略，输出最终工具名列表 |
+`AgentController.run(task, mode, max_steps)` 支持三种任务输入：
 
-### 2.4 experiments/（成员 C）
+```text
+TaskInfo
+  -> 直接使用
 
-| 文件 | 职责 |
-|---|---|
-| `baseline.py` | 全量工具模式入口 |
-| `fixed_topk.py` | 固定 Top-K 模式入口 |
-| `adaptive_topk.py` | 自适应 Top-K 模式入口 |
-| `evaluate.py` | 成功率、Token、耗时、调用次数、召回率、精确率计算 |
-| `schemas.py` | `ExperimentConfig` / `ExperimentResult` 与 CSV 列定义 |
+完整 benchmark 映射
+  （含 task_id / description / task_type / language / complexity）
+  -> TaskInfo.from_dict(task)
 
-### 2.5 benchmark/、results/、docs/、demo/
-
-- `benchmark/`：任务集（`tasks.json`）、人工标注的预期工具（`expected_tools.json`）与任务工作区（`workspaces/`）（成员 B 创建维护，成员 C 实验时副本化使用）。
-- `results/`：`raw_results.csv`（逐次记录）、`summary.csv`（汇总）、`figures/`（图表）（成员 D）。
-- `docs/`：架构与开发文档（成员 D 维护、成员 A 审核）。
-- `demo/`：演示入口（成员 D）。
-
-### 2.6 benchmark/workspaces/（任务工作区，成员 B 维护、成员 C 使用）
-
-`benchmark/workspaces/` 存放每个 Benchmark Task 对应的实际 Python 项目环境，是 Agent 在实验中真正读写的代码对象。
-
-| 约定 | 说明 |
-|---|---|
-| 目录命名 | 子目录名与 `tasks.json` 的 `task_id` 完全一致（当前为 `task_001` / `task_002` / `task_003`） |
-| 独立结构 | 每个任务目录可自组织 `src/`、`tests/`、`pyproject.toml`、`README.md` 等，不强制统一 |
-| 初始状态 | 同一任务的所有实验组与重复实验都从相同初始代码状态开始 |
-| 隔离与重置 | 使用独立工作副本（推荐复制到临时实验目录）或可靠重置机制，禁止在初始工作区上直接迭代 |
-| 归属 | 成员 B 创建与维护初始工作区；成员 C 在实验运行时复制 / 重置并使用；A、D 不改动其内容 |
-| 当前状态 | 仅有 `task_001`~`task_003` 空目录（`.gitkeep` 占位），不含真实任务代码 |
-
-详细约定见 `benchmark/workspaces/README.md`。
-
-## 3. 模块之间的数据流
-
-### 3.1 一次完整任务的数据流
-
-```
-benchmark/tasks.json
-   │ 一条任务 dict
-   ▼
-AgentController.run(task, mode, max_steps)
-   │
-   ├─► TaskAnalyzer.analyze(description)
-   │        └─► TaskInfo {task_id, description, task_type, language, intents, complexity}
-   │
-   ├─► _select_tools(task_info, mode)
-   │        ├─ baseline      : ToolRegistry.tool_names
-   │        ├─ fixed_topk    : TFIDFRetriever.retrieve(task_info) → AdaptiveSelector.select(strategy="fixed")
-   │        └─ adaptive_topk : TFIDFRetriever.retrieve(task_info) → AdaptiveSelector.select(complexity, strategy="adaptive")
-   │        └─► selected_tool_names: list[str]
-   │
-   ├─► ToolRegistry.get_schemas(selected_tool_names)
-   │        └─► tools: list[dict]  (OpenAI function calling schema)
-   │
-   ├─► LLMClient.chat(messages, tools)
-   │        └─► LLMResponse {content, tool_calls, input/output/total_tokens}
-   │              │ 若 tool_calls 非空
-   │              ├─► ToolRegistry.execute_tool(name, arguments)
-   │              │        └─► 工具结果 → 追加到 messages（role="tool"）
-   │              └─► 继续下一轮（最多 max_steps 轮）
-   │
-   └─► AgentRunResult {task_id, mode, task_success, selected_tools, steps,
-                       tokens, execution_time, tool_call_count, error_message}
+自然语言字符串或不完整映射
+  -> TaskAnalyzer.analyze(description, task_id) -> TaskInfo
 ```
 
-说明：任务对应的实际代码位于 `benchmark/workspaces/<task_id>/`。成员 C 在实验开始前把该目录复制为独立工作副本，Agent 的工具调用只作用于副本，因此 `benchmark/tasks.json` 提供任务语义，工作区提供任务环境。
+完整映射直接转换的目的是：三种实验模式共享同一份任务语义，避免每种模式重新调用 LLM 造成分析结果漂移。
 
-### 3.2 从运行结果到实验记录
+### 3.2 完整执行链路
 
-```
-AgentRunResult
-   │
-   ├─► evaluate.evaluate_task_success()      → task_success
-   ├─► evaluate.calculate_token_usage()      → input/output/total_tokens
-   ├─► evaluate.calculate_execution_time()   → execution_time
-   ├─► evaluate.calculate_tool_call_count()  → tool_call_count
-   ├─► evaluate.calculate_tool_recall()      → 工具召回率（辅助指标）
-   └─► evaluate.calculate_tool_precision()   → 工具精确率（辅助指标）
-   │
-   ▼
-ExperimentResult → results/raw_results.csv
-                 → results/summary.csv（按 mode 聚合）
-                 → results/figures/（图表）
-```
-
-### 3.3 依赖方向
-
-```
-config.py  ◄── 所有模块
-agent/controller.py  ──►  agent/llm_client.py, agent/task_analyzer.py
-agent/controller.py  ──►  retrieval/*（仅调用接口）
-agent/controller.py  ──►  tools/registry.py
-retrieval/tfidf_retriever.py ──► tools/definitions.py, agent/task_analyzer.py（类型）
-retrieval/adaptive_selector.py ──► retrieval/tfidf_retriever.py（类型）
-experiments/* ──► agent/controller.py, experiments/schemas.py
-tools/* ──► config.py（工作目录等配置）
+```text
+task
+  -> TaskInfo
+  -> _select_tools(task_info, mode)
+       baseline      : ToolRegistry.tool_names
+       fixed_topk    : TFIDFRetriever.retrieve(task_info)
+                       -> AdaptiveSelector.select(..., strategy="fixed")
+       adaptive_topk : TFIDFRetriever.retrieve(task_info)
+                       -> AdaptiveSelector.select(..., complexity=..., strategy="adaptive")
+  -> ToolRegistry.get_schemas(selected_tools)
+  -> messages = [system, user(description)]
+  -> 循环（最多 max_steps 轮）：
+       LLMClient.chat(messages, tools=schemas)
+       -> 无 tool_calls：termination_reason="completed"，结束
+       -> 有 tool_calls：
+            messages += assistant(tool_calls)
+            逐个 ToolRegistry.execute_tool(name, arguments)
+            messages += tool(tool_call_id, name, result)
+            继续下一轮
+  -> AgentRunResult
 ```
 
-> 为避免循环导入，`agent/controller.py` 对 `retrieval/`、`tools/` 的引用只用于类型标注（`TYPE_CHECKING`）。
+### 3.3 会话消息格式
+
+工具调用回填遵循 OpenAI 规范：
+
+```text
+assistant:
+  {"role": "assistant", "content": ..., "tool_calls": [
+      {"id": ..., "type": "function",
+       "function": {"name": ..., "arguments": "<JSON 字符串>"}}]}
+
+tool:
+  {"role": "tool", "tool_call_id": ..., "name": ..., "content": "<文本结果>"}
+```
+
+一个响应中的多个 ToolCall 全部执行，并逐条按 `tool_call_id` 关联回填。
+
+---
 
 ## 4. 统一数据结构
 
-所有结构均为 `dataclass`，并提供 `to_dict()`；字段名即 CSV / JSON 中的字段名。
+### 4.1 TaskInfo
 
-### 4.1 TaskInfo（`agent/task_analyzer.py`）
+定义于 `agent/task_analyzer.py`。
 
-| 字段 | 类型 | 必填 | 含义 |
-|---|---|---|---|
-| `task_id` | `str` | 是 | 任务唯一标识，与 `benchmark/tasks.json` 对应 |
-| `description` | `str` | 是 | 自然语言任务描述，检索的查询文本 |
-| `task_type` | `str` | 是 | 任务类型：`bug_fix` / `feature_add` / `refactor` / `test_write` / `doc` |
-| `language` | `str` | 是 | 主要编程语言，如 `python` |
-| `intents` | `list[str]` | 是 | 意图关键词，供检索增强与自适应选择使用 |
-| `complexity` | `str` | 是 | 复杂度，取值 `simple` / `medium` / `complex` |
+```text
+task_id      str   任务唯一标识，与 benchmark tasks.json 对应
+description  str   自然语言任务描述（检索主输入）
+task_type    str   bug_fix / feature_add / refactor / test_write / doc
+language     str   主要编程语言，未知为 unknown
+intents      list[str]  操作意图关键词
+complexity   str   simple / medium / complex（构造时校验）
+```
 
-### 4.2 ToolDefinition（`tools/definitions.py`）
+提供 `to_dict()` / `from_dict()`。
 
-| 字段 | 类型 | 必填 | 含义 |
-|---|---|---|---|
-| `name` | `str` | 是 | 工具唯一名称，检索与执行标识 |
-| `description` | `str` | 是 | 自然语言描述，TF-IDF 的核心输入 |
-| `category` | `str` | 是 | 分类，取值见 `config.TOOL_CATEGORIES` |
-| `parameters` | `dict` | 是 | JSON Schema（`type=object`，含 `properties` / `required`） |
-| `function_name` | `str` | 是 | 对应 `tools.implementations` 中的函数名，默认同 `name` |
+### 4.2 ToolDefinition
 
-### 4.3 RetrievedTool（`retrieval/tfidf_retriever.py`）
+定义于 `tools/definitions.py`。
 
-| 字段 | 类型 | 必填 | 含义 |
-|---|---|---|---|
-| `tool_name` | `str` | 是 | 工具名称，必须能在 `ToolRegistry` 中查到 |
-| `score` | `float` | 是 | 相关性分数，越大越相关（具体量纲由实现约定） |
-| `rank` | `int` | 是 | 排名，从 1 开始，1 为最相关 |
+```text
+name          str   全局唯一工具名
+description   str   面向模型的功能描述（进入 schema，有 Token 成本）
+category      str   分类，见 config.TOOL_CATEGORIES
+parameters    dict  JSON Schema（至少含 type）
+function_name str   实现函数名，为空时默认等于 name
+search_hints  list[str]  面向检索器的场景词 / 同义词（不进入 schema，零 Token 成本）
+```
 
-### 4.4 ExperimentConfig（`experiments/schemas.py`）
+**描述职责划分**：`description` 只给模型看；`search_hints` 只给检索器看。TF-IDF 文档由 `name + category + search_hints` 构建；旧定义没有 hints 时才回退到 `description`。
 
-| 字段 | 类型 | 必填 | 含义 |
-|---|---|---|---|
-| `mode` | `str` | 是 | 实验模式：`baseline` / `fixed_topk` / `adaptive_topk` |
-| `top_k` | `int \| None` | 否 | Fixed Top-K 的 K；其他模式为 `None` |
-| `max_steps` | `int` | 否 | Agent 最大执行轮数，默认 8 |
-| `task_id` | `str` | 是 | 本次执行的任务 ID |
+### 4.3 RetrievedTool
 
-### 4.5 ExperimentResult（`experiments/schemas.py`）
+定义于 `retrieval/tfidf_retriever.py`。
 
-| 字段 | 类型 | 含义 |
-|---|---|---|
-| `task_id` | `str` | 任务 ID |
-| `experiment_mode` | `str` | 实验模式 |
-| `task_success` | `bool` | 是否成功完成任务 |
-| `input_tokens` | `int` | 输入 Token 总数 |
-| `output_tokens` | `int` | 输出 Token 总数 |
-| `total_tokens` | `int` | Token 总数 |
-| `execution_time` | `float` | 执行耗时（秒） |
-| `tool_call_count` | `int` | 工具调用次数 |
-| `selected_tools` | `list[str]` | 提供给模型的工具名列表（顺序即提供给模型的顺序） |
-| `error_message` | `str \| None` | 失败原因，成功为 `None` |
+```text
+tool_name  str    工具名
+score      float  余弦相似度（越大越相关）
+rank       int    排名，从 1 开始
+```
 
-### 4.6 运行期辅助结构
+### 4.4 AgentStep
 
-- `LLMResponse` / `ToolCall`（`agent/llm_client.py`）：模型响应与工具调用请求。
-- `AgentStep` / `AgentRunResult`（`agent/controller.py`）：逐步执行轨迹与运行汇总，`AgentRunResult` 是 `ExperimentResult` 的数据来源。
-- `SelectionConfig`（`retrieval/adaptive_selector.py`）：`top_k` / `min_k` / `max_k`。
+定义于 `agent/controller.py`。
 
-### 4.7 模块间传递约定
+```text
+step_index      int   步骤序号（从 0 开始）
+step_type       str   "assistant" | "tool"
+content         str   模型文本（assistant）
+tool_name       str   工具名（tool）
+tool_arguments  dict  工具参数
+tool_result     Any   工具返回值
+error_message   str   该步骤错误信息
+```
 
-1. `TaskInfo`：`TaskAnalyzer` 产出 → `AgentController` 与 `TFIDFRetriever` 消费。
-2. `ToolDefinition`：`ToolRegistry.get_all_tools()` 产出 → `TFIDFRetriever.fit()` 与 `get_schemas()` 消费。
-3. `RetrievedTool`：`TFIDFRetriever.retrieve()` 产出 → `AdaptiveSelector.select()` 消费。
-4. `list[str]`：`AdaptiveSelector.select()` / Baseline 的 `tool_names` 产出 → `ToolRegistry.get_schemas(names)` 消费。
-5. `AgentRunResult`：`AgentController.run()` 产出 → `experiments/evaluate.py` 消费并转成 `ExperimentResult`。
-6. `ExperimentResult`：`evaluate.py` / `experiments` 产出 → `results/*.csv` 与统计脚本消费。
+### 4.5 AgentRunResult
 
-## 5. 各模块接口定义
+定义于 `agent/controller.py`。
 
-### 5.1 agent/llm_client.py
+```text
+task_id             str
+mode                str   baseline / fixed_topk / adaptive_topk
+task_success        bool  Agent 流程是否无错误（不代表任务最终正确性）
+selected_tools      list[str]  提供给模型的工具
+steps               list[AgentStep]
+input_tokens        int
+output_tokens       int
+total_tokens        int
+execution_time      float  秒
+tool_call_count     int
+error_message       str | None
+termination_reason  str | None  completed / max_steps / error
+```
+
+### 4.6 ExperimentConfig / ExperimentResult
+
+定义于 `experiments/schemas.py`。
+
+```text
+ExperimentConfig:
+  mode: str, task_id: str, top_k: int | None, max_steps: int
+
+ExperimentResult:
+  task_id, experiment_mode, task_success,
+  input_tokens, output_tokens, total_tokens,
+  execution_time, tool_call_count, selected_tools, error_message
+```
+
+`RESULT_CSV_FIELDS` 与 `ExperimentResult` 字段顺序一致，用于 `results/raw_results.csv`。
+
+### 4.7 跨模块契约
+
+```text
+AgentRunResult（运行期轨迹）
+  -> experiments 抽取：task_success / tokens / 耗时 / 调用次数 / selected_tools
+  -> ExperimentResult（可落盘结果）
+  -> results/raw_results.csv
+```
+
+`AgentRunResult.task_success` 与最终任务成功是两个概念：前者只看 Agent 流程是否报错，后者由 `experiments/evaluate.py` 结合 `success_criteria` / 测试结果判定。
+
+---
+
+## 5. 接口定义
+
+### 5.1 LLMClient
 
 ```python
 class LLMClient:
     def __init__(self, model: str, api_key: str | None = None,
-                 base_url: str | None = None, **options): ...
+                 base_url: str | None = None, **options) -> None
     def chat(self, messages: Sequence[Message],
-             tools: Sequence[dict] | None = None, **kwargs) -> LLMResponse: ...
+             tools: Sequence[dict] | None = None, **kwargs) -> LLMResponse
 ```
 
-- 输入：OpenAI 风格消息列表；`tools` 为 `ToolRegistry.get_schemas()` 输出。
-- 输出：`LLMResponse(content, tool_calls, input_tokens, output_tokens, total_tokens, raw)`。
-- 约束：不得在代码中出现真实密钥；异常必须以清晰异常类型抛出，不得静默返回空响应。
+- Key 优先级：显式参数 → `LLM_API_KEY` → `OPENAI_API_KEY`；
+- `LLMResponse`：`content / tool_calls / input_tokens / output_tokens / total_tokens / raw`；
+- 统一异常 `LLMClientError`；缺少 Key 抛 `ValueError`。
 
-### 5.2 agent/task_analyzer.py
+### 5.2 TaskAnalyzer
 
 ```python
 class TaskAnalyzer:
-    def __init__(self, llm_client: LLMClient | None = None): ...
-    def analyze(self, task_description: str, task_id: str | None = None) -> TaskInfo: ...
+    def __init__(self, llm_client: LLMClient | None = None) -> None
+    def analyze(self, task_description: str, task_id: str | None = None) -> TaskInfo
 ```
 
-### 5.3 agent/controller.py
+异常：`TaskAnalysisError`（调用失败、非 JSON、字段缺失或枚举非法）。
+
+### 5.3 TFIDFRetriever
 
 ```python
-class AgentController:
-    def __init__(self, llm_client, task_analyzer, tool_registry,
-                 retriever=None, selector=None, default_max_steps: int = 8): ...
-    def run(self, task: TaskInfo | Mapping[str, Any] | str,
-            mode: str = "baseline", max_steps: int | None = None) -> AgentRunResult: ...
-    def _select_tools(self, task_info: TaskInfo, mode: str) -> list[str]: ...
+class TFIDFRetriever:
+    def fit(self, tool_definitions: Sequence[ToolDefinition]) -> TFIDFRetriever
+    def retrieve(self, task_info: TaskInfo | str,
+                 top_k: int | None = None) -> list[RetrievedTool]
 ```
 
-- `run()` 必须校验 `mode ∈ config.EXPERIMENT_MODES`，非法模式抛 `ValueError`。
-- `run()` 不得直接实现检索 / 排序算法，只能调用 retrieval 接口。
-- `mode="fixed_topk"` / `"adaptive_topk"` 时 `retriever` 必填；`"adaptive_topk"` 时 `selector` 必填，缺失应抛 `ValueError`（待实现）。
+- 分词：英文标识符整体 + 下划线子词；中文连续片段输出单字 + 相邻双字；
+- 排序稳定，同分保持注册顺序；
+- 未 `fit` 调用 `retrieve` 抛 `RuntimeError`；空工具库 / 空词表抛 `ValueError`。
 
-### 5.4 tools/registry.py
+### 5.4 AdaptiveSelector
+
+```python
+class AdaptiveSelector:
+    def __init__(self, config: SelectionConfig | dict | None = None) -> None
+    def select(self, ranked_tools: Sequence[RetrievedTool],
+               complexity: str | None = None,
+               strategy: str = "fixed") -> list[str]
+```
+
+- `fixed`：取前 `config.top_k`；
+- `adaptive`：`simple→3 / medium→5 / complex→7`，再用 `[min_k, max_k]` 夹取；
+- 实际数量不超过候选工具数；空列表返回 `[]`。
+
+### 5.5 ToolRegistry
 
 ```python
 class ToolRegistry:
@@ -295,148 +292,148 @@ class ToolRegistry:
     def tool_names(self) -> list[str]
 ```
 
-- `get_all_tools()` 用于 Baseline；`get_tools_by_names()` / `get_schemas(names)` 用于 Fixed / Adaptive Top-K。
-- 未注册工具统一抛 `KeyError`；重复注册抛 `ValueError`。
-- `execute_tool()` 待成员 B 增加参数校验与 `workspace_dir` 安全边界。
+`get_schemas(None)` 返回全部工具；schema 形如：
 
-### 5.5 retrieval/tfidf_retriever.py
-
-```python
-class TFIDFRetriever:
-    def fit(self, tool_definitions: Sequence[ToolDefinition]) -> "TFIDFRetriever": ...
-    def retrieve(self, task_info: TaskInfo | str,
-                 top_k: int | None = None) -> list[RetrievedTool]: ...
-    @property
-    def is_fitted(self) -> bool: ...
+```json
+{"type": "function",
+ "function": {"name": "...", "description": "...", "parameters": {...}}}
 ```
 
-- `fit()` 必须缓存索引；未 `fit()` 直接 `retrieve()` 应抛 `RuntimeError`（待实现）。
-- `retrieve()` 返回结果必须按 `score` 降序、`rank` 从 1 连续编号。
-
-### 5.6 retrieval/adaptive_selector.py
+### 5.6 AgentController
 
 ```python
-class AdaptiveSelector:
-    def __init__(self, config: SelectionConfig | dict | None = None): ...
-    def select(self, ranked_tools: Sequence[RetrievedTool],
-               complexity: str | None = None,
-               strategy: str = "fixed") -> list[str]: ...
+class AgentController:
+    def __init__(self, llm_client, task_analyzer, tool_registry,
+                 retriever=None, selector=None, default_max_steps=8) -> None
+    def run(self, task: TaskInfo | Mapping | str,
+            mode: str = "baseline",
+            max_steps: int | None = None) -> AgentRunResult
 ```
 
-- `strategy="fixed"`：取 `ranked_tools[: config.top_k]` 的工具名。
-- `strategy="adaptive"`：K 由 `complexity` 与配置区间 `[min_k, max_k]` 决定。
-- 输出顺序必须与 `ranked_tools` 一致，供 `get_schemas(names)` 使用。
+- `baseline` 不需要 retriever / selector；
+- `fixed_topk` / `adaptive_topk` 缺少依赖时在调用模型前抛 `ValueError`；
+- 工具集合在整次任务中保持不变，schema 只获取一次。
 
-### 5.7 experiments/
+### 5.7 experiments
+
+当前为接口占位（`NotImplementedError`，待成员 C）：
 
 ```python
-def run_baseline(agent: AgentController, task: Mapping[str, Any]) -> AgentRunResult
-def run_fixed_topk(agent: AgentController, task: Mapping[str, Any], top_k: int = 5) -> AgentRunResult
-def run_adaptive_topk(agent: AgentController, task: Mapping[str, Any]) -> AgentRunResult
+run_baseline(agent, task) -> AgentRunResult
+run_fixed_topk(agent, task, top_k=5) -> AgentRunResult
+run_adaptive_topk(agent, task) -> AgentRunResult
+
+evaluate_task_success(result, task=None) -> bool
+calculate_token_usage(result) -> dict[str, int]
+calculate_execution_time(result) -> float
+calculate_tool_call_count(result) -> int
+calculate_tool_recall(selected_tools, expected_tools) -> float
+calculate_tool_precision(selected_tools, expected_tools) -> float
 ```
 
-```python
-def evaluate_task_success(result, task=None) -> bool
-def calculate_token_usage(result) -> dict[str, int]
-def calculate_execution_time(result) -> float
-def calculate_tool_call_count(result) -> int
-def calculate_tool_recall(selected_tools, expected_tools) -> float
-def calculate_tool_precision(selected_tools, expected_tools) -> float
-```
+### 5.8 工具实现
 
-### 5.8 config.py
+`tools/implementations.py` 提供 16 个函数：`read_file / write_file / list_files / file_info / edit_file / apply_patch / delete_path / move_path / search_code / find_symbol / list_todos / run_tests / check_syntax / git_status / git_diff / run_command`。
 
-```python
-class Settings:            # 聚合配置
-    model: ModelConfig     # 模型名 / key / base_url / temperature / max_tokens
-    agent: AgentConfig     # max_steps / workspace_dir / allow_shell
-    retrieval: RetrievalConfig  # top_k / adaptive_min_k / adaptive_max_k
-    benchmark: BenchmarkConfig  # tasks_file / expected_tools_file
-    results: ResultsConfig      # raw_results_file / summary_file / figures_dir
-    default_mode: str
-def get_settings() -> Settings     # 单例，从环境变量加载
-```
+实验侧可通过 `configure_workspace(path)` 在同一进程内切换工具根目录（不同任务工作副本）。
+
+---
 
 ## 6. 三种实验模式的执行流程
 
-### 6.1 Baseline
+三种模式共用同一入口、同一循环、同一结果结构，唯一差异是工具选择：
 
-```
-task ─► TaskAnalyzer ─► TaskInfo
-      ─► selected = ToolRegistry.tool_names（全部工具）
-      ─► schemas = ToolRegistry.get_schemas()（names=None）
-      ─► 多轮 chat / execute_tool 循环
-      ─► AgentRunResult
+### baseline
+
+```text
+selected = tool_registry.tool_names
 ```
 
-特点：不做任何筛选，Token 消耗最高，作为对照组。
+不做任何检索与筛选，schema 成本最高，作为对照组。
 
-### 6.2 Fixed Top-K
+### fixed_topk
 
-```
-task ─► TaskAnalyzer ─► TaskInfo
-      ─► ranked = TFIDFRetriever.retrieve(TaskInfo)
-      ─► selected = AdaptiveSelector.select(ranked, strategy="fixed")   # 前 K 个
-      ─► schemas = ToolRegistry.get_schemas(selected)
-      ─► 多轮 chat / execute_tool 循环
-      ─► AgentRunResult（selected_tools 长度恒为 K，不足 K 时取全部）
+```text
+ranked = retriever.retrieve(task_info)          # 全部工具已排序
+selected = selector.select(ranked, strategy="fixed")
 ```
 
-特点：筛选程度固定，用于观察"工具筛选本身"的收益；K 由实验网格（如 3/5/8）设定。
+固定 K（默认 5，受 `SelectionConfig.top_k` 控制），不随任务复杂度变化。
 
-### 6.3 Adaptive Top-K
+### adaptive_topk
 
-```
-task ─► TaskAnalyzer ─► TaskInfo（含 complexity）
-      ─► ranked = TFIDFRetriever.retrieve(TaskInfo)
-      ─► selected = AdaptiveSelector.select(ranked, complexity=TaskInfo.complexity,
-                                            strategy="adaptive")      # K 动态确定
-      ─► schemas = ToolRegistry.get_schemas(selected)
-      ─► 多轮 chat / execute_tool 循环
-      ─► AgentRunResult（selected_tools 长度随任务变化）
+```text
+ranked = retriever.retrieve(task_info)
+selected = selector.select(ranked,
+                           complexity=task_info.complexity,
+                           strategy="adaptive")
 ```
 
-特点：简单任务少给工具以降低 Token 与干扰，复杂任务多给工具以降低召回风险。
+K 由任务复杂度决定（simple→3 / medium→5 / complex→7），并夹在配置区间 `[min_k, max_k]` 内。
 
-### 6.4 三类模式共用约定
+### 共同部分
 
-| 约定 | 说明 |
+```text
+get_schemas(selected) -> chat -> [执行 tool_calls -> 回填 -> chat] -> AgentRunResult
+```
+
+selected_tools、schema、循环轮数上限与结果记录方式完全一致，保证对照公平。
+
+---
+
+## 7. 执行与终止语义
+
+| 情况 | task_success | termination_reason | 说明 |
+|---|---|---|---|
+| 模型返回纯文本 | True | `completed` | 正常结束 |
+| 达到 max_steps 仍未结束 | True | `max_steps` | 非流程错误 |
+| 工具执行失败 | 仍可为 True | 由后续轮次决定 | 错误以 tool 消息回填，模型可修复 |
+| 分析 / 检索 / 模型 / 控制器异常 | False | `error` | `error_message` 记录原因 |
+
+工具失败只写入对应 `AgentStep.error_message`，不直接判定任务失败；最终正确性由评价层判定。
+
+---
+
+## 8. 安全边界
+
+由 `tools/implementations.py` 实现（成员 B）：
+
+1. **路径围栏**：所有路径必须是相对路径，解析后必须落在 `AGENT_WORKSPACE_DIR` 内；拒绝绝对路径、盘符、`..`、越界符号链接；
+2. **命令执行默认关闭**：`AGENT_ALLOW_SHELL=false` 时 `run_command` 抛 `PermissionError`；开启后仅允许白名单程序，且不经过 shell 解析；
+3. **输出截断**：工具输出限制在 `MAX_TOOL_OUTPUT_CHARS`，避免撑爆上下文；
+4. **敏感环境隔离**：子进程不继承名称含 `API_KEY / TOKEN / SECRET / PASSWORD` 等变量；
+5. **工作副本**：实验层负责把 `benchmark/workspaces/<task_id>` 复制到独立目录后运行，避免组间污染。
+
+---
+
+## 9. 四人协作关系
+
+| 成员 | 负责范围 | 对外契约 |
+|---|---|---|
+| A | `agent/`、`retrieval/`、`config.py`、`scripts/`（联调）、共享数据结构协调 | `LLMClient`、`TaskAnalyzer`、`AgentController`、`TFIDFRetriever`、`AdaptiveSelector`、`AgentRunResult` |
+| B | `tools/`、`benchmark/` | `ToolDefinition`（含 description / search_hints）、`ToolRegistry`、工具实现、任务工作区 |
+| C | `experiments/` | 三个 `run_*` 入口、六项指标、实验结果字段消费 |
+| D | `results/`、`docs/`、`demo/`、`presentation/` | 结果文件、图表、文档与展示 |
+
+变更规则：
+
+1. 跨模块接口变更必须同步修改本文档与相关测试；
+2. `description` / `search_hints` 的内容由 B 维护，检索逻辑由 A 维护；新增工具必须提供 hints；
+3. `benchmark/tasks.json` 的 `project_path` 必须指向 `benchmark/workspaces/<task_id>`；
+4. 实验层只消费 `AgentRunResult`，不得绕过 `AgentController` 直接调用工具；
+5. 真实 API Key、`.env`、`.devlogs/` 不进入版本库。
+
+---
+
+## 10. 测试与联调现状
+
+| 项目 | 状态 |
 |---|---|
-| 统一入口 | 都通过 `AgentController.run(task, mode=...)` 执行 |
-| 统一记录 | 都产出 `AgentRunResult`，再转为 `ExperimentResult` |
-| 统一评价 | 都由 `experiments/evaluate.py` 计算同一组指标 |
-| 唯一差异 | 仅 `selected_tool_names` 的来源不同 |
-| 可复现 | 实验配置（K、max_steps、模型名）需写入 `ExperimentConfig` 与结果文件 |
+| 单元测试 | 114 项，`python -m unittest discover -s tests -v` 全部通过 |
+| 覆盖范围 | LLMClient（Mock）、TaskAnalyzer、TF-IDF、AdaptiveSelector、AgentController（单轮 / 多轮 / 异常）、Benchmark 结构、工具注册与 schema |
+| 真实 Qwen4-Max | 已完成文本调用与三种模式 Function Calling 冒烟（`scripts/test_qwen_api.py`、`scripts/test_qwen_agent.py`） |
+| 检索诊断 | `scripts/probe_retrieval.py`：排名、交集词、recall@K、跨工具噪声词 |
+| 实验入口 | 未实现（成员 C） |
+| 指标计算 | 未实现（成员 C） |
 
-## 7. 四人协作关系
-
-```
-                 ┌─────────────────────────────┐
-                 │ 成员 A：架构 + agent/retrieval│
-                 │  - 定义数据结构与接口          │
-                 │  - 实现 Agent 与工具选择算法    │
-                 └───────┬─────────────┬───────┘
-                         │ 接口契约     │ 接口契约
-          ┌──────────────▼───┐     ┌───▼──────────────────┐
-          │ 成员 B：tools/    │     │ 成员 C：experiments/  │
-          │ benchmark/        │     │  - 三组实验入口        │
-          │  - 工具元数据与实现│     │  - 指标计算           │
-          │  - 任务与标注      │     └──────────┬───────────┘
-          └──────────────┬───┘                │ 结果数据
-                         │ 工具清单 / 数据      │
-                         ▼                    ▼
-                 ┌────────────────────────────────────┐
-                 │ 成员 D：results/ docs/ demo/        │
-                 │  - 统计、可视化、文档、汇报          │
-                 └────────────────────────────────────┘
-```
-
-协作规则：
-
-1. **接口先行**：任何跨模块接口变更先改本文件，再改代码与调用方。
-2. **数据结构唯一来源**：`TaskInfo` / `ToolDefinition` / `RetrievedTool` / `ExperimentConfig` / `ExperimentResult` 不得在别处重复定义。
-3. **工具名一致性**：`benchmark/expected_tools.json` 中的工具名必须能在 `tools/definitions.py` 注册表中找到（自检测试已校验）。
-4. **归属不重复**：成员 A 只定义并调用接口，不实现 B/C 的业务逻辑；B 不修改检索算法；C 不修改数据结构；D 不改业务代码。
-5. **合并前自检**：每人提交前运行 `python -m unittest discover -s tests -v`。
-6. **占位规范**：未完成能力必须 `raise NotImplementedError("待成员 X 实现：...")`，并保留 TODO 说明预期功能，禁止用 `pass` 或空实现冒充完成。
-7. **工作区隔离**：任务工作区由成员 B 维护在 `benchmark/workspaces/<task_id>/`；成员 C 实验时必须使用独立副本或可靠重置，禁止直接修改初始工作区，保证实验可复现、互不污染。
+真实 API 脚本手动执行、不进入 unittest；运行环境需可访问模型服务。

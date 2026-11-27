@@ -198,6 +198,10 @@ class AgentController:
         explicit_task_id: Optional[str] = None
         if isinstance(task, TaskInfo):
             pre_analyzed = task
+        elif isinstance(task, Mapping) and self._is_structured_task(task):
+            # Benchmark 任务已经包含分析结果时，三种实验共用同一份 TaskInfo，
+            # 避免每种模式重新调用 LLM 造成任务信息漂移。
+            pre_analyzed = TaskInfo.from_dict(task)
         else:
             description, explicit_task_id = self._extract_task_input(task)
 
@@ -300,6 +304,12 @@ class AgentController:
             raise ValueError(f"mode={mode!r} 需要 selector（AdaptiveSelector），当前未提供")
 
     @staticmethod
+    def _is_structured_task(task: Mapping[str, Any]) -> bool:
+        """判断 mapping 是否包含可直接构造 TaskInfo 的完整字段。"""
+        required = ("task_id", "description", "task_type", "language", "complexity")
+        return all(task.get(field) not in (None, "") for field in required)
+
+    @staticmethod
     def _extract_task_input(task: Union[Mapping[str, Any], str]) -> Tuple[str, Optional[str]]:
         """从字符串或 benchmark 任务字典中提取描述与任务 ID。"""
         if isinstance(task, str):
@@ -330,7 +340,12 @@ class AgentController:
         """累加单轮响应的 Token 用量。"""
         result.input_tokens += int(getattr(response, "input_tokens", 0) or 0)
         result.output_tokens += int(getattr(response, "output_tokens", 0) or 0)
-        result.total_tokens += int(getattr(response, "total_tokens", 0) or 0)
+        total = int(getattr(response, "total_tokens", 0) or 0)
+        if total == 0:
+            total = int(getattr(response, "input_tokens", 0) or 0) + int(
+                getattr(response, "output_tokens", 0) or 0
+            )
+        result.total_tokens += total
 
     @staticmethod
     def _build_assistant_tool_message(response: Any, tool_calls: List[Any]) -> Dict[str, Any]:
