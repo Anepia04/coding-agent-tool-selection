@@ -4,7 +4,9 @@
 - ``fixed``   ：固定选择前 K 个工具（Fixed Top-K 模式）；
 - ``adaptive``：结合任务复杂度动态确定工具数量（Adaptive Top-K 模式）。
 
-当前阶段只定义接口，不实现复杂度判断与自适应选择算法。
+自适应规则（初始版本）：
+    simple -> 3，medium -> 5，complex -> 7，
+并受 ``SelectionConfig.min_k`` / ``max_k`` 约束。
 
 负责成员：成员 A
 """
@@ -22,6 +24,13 @@ logger = logging.getLogger(__name__)
 
 #: 选择策略取值
 SELECTION_STRATEGIES = ("fixed", "adaptive")
+
+#: 任务复杂度 -> 初始工具数量（adaptive 策略），实际取值还会被 min_k / max_k 约束
+COMPLEXITY_TOP_K = {
+    "simple": 3,
+    "medium": 5,
+    "complex": 7,
+}
 
 
 @dataclass(frozen=True)
@@ -79,17 +88,38 @@ class AdaptiveSelector:
             List[str]: 最终选中的工具名称列表（顺序与 ranked_tools 一致）。
 
         Raises:
-            ValueError: strategy 不合法。
-            NotImplementedError: 当前阶段未实现。
+            ValueError: strategy 不合法；adaptive 策略缺少 complexity 或 complexity 未知。
         """
         if strategy not in SELECTION_STRATEGIES:
             raise ValueError(f"不支持的策略: {strategy!r}，可选值: {SELECTION_STRATEGIES}")
 
-        # TODO(成员 A)：
-        # fixed    -> 取 ranked_tools[: config.top_k]
-        # adaptive -> 依据 complexity 在 [min_k, max_k] 内确定 K，
-        #             必要时结合分数分布（阈值 / 落差）裁剪
-        raise NotImplementedError("待成员 A 实现：AdaptiveSelector.select 工具选择")
+        if strategy == "fixed":
+            selected_count = self.config.top_k
+        else:
+            if complexity is None:
+                raise ValueError("adaptive 策略必须提供 complexity（simple / medium / complex）")
+            if complexity not in COMPLEXITY_TOP_K:
+                raise ValueError(
+                    f"未知的任务复杂度: {complexity!r}，可选值: {tuple(COMPLEXITY_TOP_K)}"
+                )
+            # 先按复杂度取初始 K，再用配置区间约束
+            selected_count = COMPLEXITY_TOP_K[complexity]
+            selected_count = max(self.config.min_k, min(selected_count, self.config.max_k))
+
+        tools = list(ranked_tools)
+        if not tools:
+            logger.debug("检索结果为空，返回空工具集合（strategy=%s）", strategy)
+            return []
+
+        selected = tools[:selected_count]
+        logger.debug(
+            "工具选择完成：strategy=%s complexity=%s 选中 %d/%d 个工具",
+            strategy,
+            complexity,
+            len(selected),
+            len(tools),
+        )
+        return [tool.tool_name for tool in selected]
 
 
-__all__ = ["AdaptiveSelector", "SelectionConfig", "SELECTION_STRATEGIES"]
+__all__ = ["AdaptiveSelector", "SelectionConfig", "SELECTION_STRATEGIES", "COMPLEXITY_TOP_K"]

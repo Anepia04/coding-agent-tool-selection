@@ -29,6 +29,19 @@ DEFAULT_RAW_RESULTS_FILE: Path = RESULTS_DIR / "raw_results.csv"
 DEFAULT_SUMMARY_FILE: Path = RESULTS_DIR / "summary.csv"
 
 # ---------------------------------------------------------------------------
+# 环境变量加载（项目根目录 .env）
+# ---------------------------------------------------------------------------
+
+try:  # python-dotenv 为可选依赖：未安装时仍可直接使用系统环境变量
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - requirements.txt 已声明该依赖
+    load_dotenv = None  # type: ignore[assignment]
+
+if load_dotenv is not None:
+    # override=False：系统环境变量优先于 .env，便于 CI / 临时覆盖
+    load_dotenv(PROJECT_ROOT / ".env", override=False)
+
+# ---------------------------------------------------------------------------
 # 枚举取值（以字符串常量形式定义，保持与 JSON / CSV 的可读性）
 # ---------------------------------------------------------------------------
 
