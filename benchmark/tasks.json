@@ -25,5 +25,158 @@
     "task_type": "refactor",
     "complexity": "complex",
     "success_criteria": "重构后公共接口行为不变；全部测试通过；函数复杂度下降。"
+  },
+  {
+    "task_id": "task_004",
+    "description": "运行 sample_project 的测试套件，定位唯一失败用例的根因并修复，使其通过。",
+    "project_path": "benchmark/workspaces/task_004",
+    "language": "python",
+    "task_type": "bug_fix",
+    "complexity": "medium",
+    "success_criteria": "所有测试通过；失败用例对应的缺陷被修复而不是被删除或跳过。"
+  },
+  {
+    "task_id": "task_005",
+    "description": "删除 sample_project 中已废弃的 legacy_io 模块，并同步清理所有引用它的代码。",
+    "project_path": "benchmark/workspaces/task_005",
+    "language": "python",
+    "task_type": "refactor",
+    "complexity": "medium",
+    "success_criteria": "legacy_io 模块及其测试被删除；代码中不再有对它的引用；其余测试全部通过。"
+  },
+  {
+    "task_id": "task_006",
+    "description": "为 sample_project 的 calculator 模块中缺失 docstring 的公共函数补充文档注释。",
+    "project_path": "benchmark/workspaces/task_006",
+    "language": "python",
+    "task_type": "doc",
+    "complexity": "simple",
+    "success_criteria": "每个公共函数都有说明用途、参数与返回值的 docstring；全部测试通过。"
+  },
+  {
+    "task_id": "task_007",
+    "description": "修复 sample_project 中空列表输入导致的索引越界异常：当输入为空时应返回空结果而不是报错。",
+    "project_path": "benchmark/workspaces/task_007",
+    "language": "python",
+    "task_type": "bug_fix",
+    "complexity": "medium",
+    "success_criteria": "空列表输入不再抛出异常并返回空结果；新增覆盖该场景的测试；全部测试通过。"
+  },
+  {
+    "task_id": "task_008",
+    "description": "为 sample_project 的配置加载函数增加参数校验：类型不符或取值为空时抛出带说明的 ValueError。",
+    "project_path": "benchmark/workspaces/task_008",
+    "language": "python",
+    "task_type": "feature_add",
+    "complexity": "medium",
+    "success_criteria": "非法参数抛出 ValueError 且消息可读；合法参数行为不变；新增测试通过。"
+  },
+  {
+    "task_id": "task_009",
+    "description": "将 sample_project 中三处重复的取值转换逻辑合并为一个公共函数，并替换原有调用。",
+    "project_path": "benchmark/workspaces/task_009",
+    "language": "python",
+    "task_type": "refactor",
+    "complexity": "medium",
+    "success_criteria": "重复逻辑只保留一处实现；原调用点全部改为调用新函数；全部测试通过。"
+  },
+  {
+    "task_id": "task_010",
+    "description": "统一 sample_project 中数据加载函数与调用方之间的参数命名与顺序不一致问题，涉及多个文件。",
+    "project_path": "benchmark/workspaces/task_010",
+    "language": "python",
+    "task_type": "bug_fix",
+    "complexity": "complex",
+    "success_criteria": "函数签名与所有调用方一致；不再出现位置参数错位；全部测试通过。"
+  },
+  {
+    "task_id": "task_011",
+    "description": "把 sample_project 中过长的 utils 模块拆分为 text_utils 与 num_utils 两个模块，并更新导入路径。",
+    "project_path": "benchmark/workspaces/task_011",
+    "language": "python",
+    "task_type": "refactor",
+    "complexity": "complex",
+    "success_criteria": "两个模块职责清晰且无循环依赖；旧模块路径的导入全部更新；全部测试通过。"
+  },
+  {
+    "task_id": "task_012",
+    "description": "为 sample_project 中尚未被测试覆盖的异常分支补充单元测试，不修改被测代码。",
+    "project_path": "benchmark/workspaces/task_012",
+    "language": "python",
+    "task_type": "test_write",
+    "complexity": "medium",
+    "success_criteria": "异常分支均有测试覆盖；新增测试通过；被测代码未被修改。"
+  },
+  {
+    "task_id": "task_013",
+    "description": "更新 sample_project 的 README：测试运行命令与实际项目结构、测试目录保持一致。",
+    "project_path": "benchmark/workspaces/task_013",
+    "language": "python",
+    "task_type": "doc",
+    "complexity": "medium",
+    "success_criteria": "README 中的命令可直接执行成功；目录结构与实际一致；不再提到已不存在的文件。"
+  },
+  {
+    "task_id": "task_014",
+    "description": "在 sample_project 中新增一个 clamp 函数（把数值限制在给定区间），并导出到包入口。",
+    "project_path": "benchmark/workspaces/task_014",
+    "language": "python",
+    "task_type": "feature_add",
+    "complexity": "simple",
+    "success_criteria": "clamp 函数实现正确且可从包入口导入；边界值行为符合预期。"
+  },
+  {
+    "task_id": "task_015",
+    "description": "修正 sample_project 中错误提示文案与项目约定不一致的问题（统一使用中文并说明具体原因）。",
+    "project_path": "benchmark/workspaces/task_015",
+    "language": "python",
+    "task_type": "bug_fix",
+    "complexity": "simple",
+    "success_criteria": "所有错误提示统一为中文且包含原因；相关测试断言同步更新并全部通过。"
+  },
+  {
+    "task_id": "task_016",
+    "description": "清理 sample_project 中标记为 TODO/FIXME 的废弃代码路径，删除不再被调用的函数。",
+    "project_path": "benchmark/workspaces/task_016",
+    "language": "python",
+    "task_type": "refactor",
+    "complexity": "medium",
+    "success_criteria": "废弃函数被删除；无残留引用与导入；TODO/FIXME 标记被处理；全部测试通过。"
+  },
+  {
+    "task_id": "task_017",
+    "description": "为 sample_project 新增 cache 模块（简单的字典缓存），并接入数据加载流程使其生效。",
+    "project_path": "benchmark/workspaces/task_017",
+    "language": "python",
+    "task_type": "feature_add",
+    "complexity": "complex",
+    "success_criteria": "cache 模块被数据加载流程实际调用；重复读取命中缓存；新增测试通过且不影响原有行为。"
+  },
+  {
+    "task_id": "task_018",
+    "description": "修复 sample_project 中字符串处理函数对非 ASCII 输入返回乱码的问题。",
+    "project_path": "benchmark/workspaces/task_018",
+    "language": "python",
+    "task_type": "bug_fix",
+    "complexity": "medium",
+    "success_criteria": "中文与常见非 ASCII 输入返回正确结果；新增覆盖该场景的测试；全部测试通过。"
+  },
+  {
+    "task_id": "task_019",
+    "description": "为 sample_project 的 divide 函数补充除数为零与负数场景的测试用例，确保行为被完全覆盖。",
+    "project_path": "benchmark/workspaces/task_019",
+    "language": "python",
+    "task_type": "test_write",
+    "complexity": "simple",
+    "success_criteria": "零与负数场景均有测试；新增测试通过；若发现缺陷则以测试暴露而不擅自改动被测代码。"
+  },
+  {
+    "task_id": "task_020",
+    "description": "为 sample_project 的公共接口补全类型注解，并保证静态检查与现有测试通过。",
+    "project_path": "benchmark/workspaces/task_020",
+    "language": "python",
+    "task_type": "doc",
+    "complexity": "complex",
+    "success_criteria": "全部公共函数都有参数与返回值类型注解；语法检查通过；全部测试通过。"
   }
 ]

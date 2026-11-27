@@ -160,8 +160,15 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="read_file",
         search_hints=[
-            "查看", "浏览", "阅读", "打开文件", "看代码", "检查源码",
-            "定位实现", "现有实现", "读一下", "内容是什么", "先看看",
+            # 显式动作与同义说法（书面语为主）
+            "查看", "浏览", "阅读", "通读", "打开", "读取", "载入", "看代码",
+            "翻阅", "审阅", "检视", "检查内容", "确认内容",
+            # 隐性语境：任何「改代码 / 查问题」任务的第一步都要先读
+            "修改前", "修复前", "改动前", "重构前", "排查问题", "定位问题",
+            "分析原因", "理解现有", "了解实现", "确认现状", "查看代码",
+            # 对象与英文术语
+            "源码", "源代码", "原始内容", "文件内容", "函数实现", "行区间",
+            "read", "open", "view", "inspect", "source",
         ],
     ),
     ToolDefinition(
@@ -178,8 +185,11 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="list_files",
         search_hints=[
-            "目录结构", "项目结构", "有哪些文件", "文件列表", "工程布局",
-            "目录树", "看看有什么", "项目有哪些",
+            "列出文件", "枚举文件", "遍历目录", "扫描目录", "有哪些文件", "文件列表",
+            "项目结构", "目录结构", "工程布局", "模块划分", "目录树", "项目组成",
+            "文件位置", "查找文件", "目录组织",
+            "目录", "文件夹", "路径", "子目录",
+            "ls", "list", "dir", "tree", "find", "glob", "directory",
         ],
     ),
     ToolDefinition(
@@ -195,8 +205,9 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="file_info",
         search_hints=[
-            "文件大小", "多少行", "文件属性", "体积", "修改时间",
-            "多大", "有多大", "行数统计", "文件信息",
+            "文件大小", "多少行", "行数", "文件属性", "体积", "修改时间",
+            "多大", "行数统计", "文件信息", "规模", "最近修改",
+            "stat", "size", "lines", "info", "mtime",
         ],
     ),
 
@@ -220,8 +231,16 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="edit_file",
         search_hints=[
-            "修改代码", "改动", "改成", "改为", "替换", "改一行", "改几行",
-            "局部修改", "修正语句", "把某行", "改写", "调整代码",
+            # 显式动作与同义
+            "修改", "改动", "改成", "改为", "改掉", "替换", "更换", "更新",
+            "调整", "修正", "更正", "纠正", "改写", "改造",
+            # 隐性语境：具体到「改哪一行、改哪个判断」
+            "改一行", "改几行", "局部修改", "修改代码", "修正逻辑",
+            "修正判断", "添加判断", "去掉冗余", "修复错误",
+            "调整实现", "修改函数", "修改条件", "替换实现",
+            # 对象与英文术语
+            "代码行", "语句", "表达式", "判断条件", "返回值", "函数体",
+            "edit", "modify", "replace", "change", "fix", "update",
         ],
     ),
     ToolDefinition(
@@ -239,8 +258,11 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="write_file",
         search_hints=[
-            "新建文件", "创建文件", "生成文件", "从零写", "整体覆盖",
-            "保存文件", "写一个", "新增文件", "补充新文件",
+            "新建文件", "创建文件", "生成文件", "写入文件", "保存文件", "写文件",
+            "输出文件", "覆盖写入", "整体替换", "整文件替换", "新建完整",
+            "新增文件", "补充文件", "新增模块", "从无到有", "初始化文件",
+            "完整内容",
+            "create", "write", "generate", "save", "new file", "overwrite",
         ],
     ),
     ToolDefinition(
@@ -256,8 +278,9 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="apply_patch",
         search_hints=[
-            "打补丁", "应用补丁", "批量修改", "diff 应用", "补丁文件",
-            "多处改动", "统一 diff",
+            "打补丁", "应用补丁", "补丁", "批量修改", "多处改动", "多处修改",
+            "一次改完", "统一格式", "整体替换", "diff 补丁",
+            "patch", "apply", "unified diff", "hunk",
         ],
     ),
     ToolDefinition(
@@ -273,8 +296,10 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="delete_path",
         search_hints=[
-            "删除", "删掉", "移除", "清理", "废弃文件", "不再需要",
-            "去掉文件", "清除",
+            "删除", "删掉", "移除", "去掉", "清理", "清除", "销毁",
+            "废弃文件", "冗余文件", "临时文件", "不再需要", "多余内容", "旧文件",
+            "删除目录", "清理冗余",
+            "delete", "remove", "rm", "clean", "drop",
         ],
     ),
     ToolDefinition(
@@ -292,8 +317,10 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="move_path",
         search_hints=[
-            "重命名", "改名", "移动文件", "挪到", "调整目录结构",
-            "归档", "换个位置", "搬迁",
+            "移动", "重命名", "改名", "搬迁", "归档", "移位", "调整路径",
+            "更换路径", "调整目录结构", "模块拆分", "重命名文件", "整理工程",
+            "路径变更", "移入子目录",
+            "move", "rename", "mv", "relocate", "reorganize",
         ],
     ),
 
@@ -313,8 +340,11 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="search_code",
         search_hints=[
-            "搜索", "查找", "关键字", "哪里用到", "引用位置", "调用点",
-            "全局搜索", "出现过", "谁用了",
+            "搜索", "查找", "检索", "定位", "全局搜索", "查找引用", "搜索代码",
+            "哪里用到", "谁调用", "被哪些地方使用", "出现位置", "引用点", "调用点",
+            "找到所有引用", "查找位置", "谁用了",
+            "关键词", "函数名", "变量名", "字符串",
+            "search", "grep", "find", "rg", "locate", "reference", "usage",
         ],
     ),
     ToolDefinition(
@@ -332,8 +362,10 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="find_symbol",
         search_hints=[
-            "函数定义", "类定义", "符号", "接口", "在哪定义", "定义位置",
-            "有哪些函数", "结构是什么", "方法列表",
+            "函数定义", "类定义", "符号", "接口", "声明", "函数签名", "方法列表",
+            "在哪定义", "在哪实现", "定义位置", "有哪些函数", "有哪些类",
+            "代码结构", "导出符号",
+            "symbol", "definition", "ast", "declaration", "signature", "class",
         ],
     ),
     ToolDefinition(
@@ -350,8 +382,9 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="list_todos",
         search_hints=[
-            "待办", "TODO", "FIXME", "未完成", "遗留问题", "待处理",
-            "还差什么", "没做完",
+            "待办", "TODO", "FIXME", "HACK", "未完成", "遗留问题", "待处理",
+            "未处理的", "待实现", "临时标记", "待完成", "遗留",
+            "todo", "fixme", "pending", "hack",
         ],
     ),
 
@@ -370,8 +403,11 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="run_tests",
         search_hints=[
-            "跑测试", "运行测试", "单元测试", "验证改动", "测试是否通过",
-            "回归", "用例", "测试失败", "检验结果",
+            "跑测试", "运行测试", "执行测试", "跑用例", "单元测试", "回归测试",
+            "验证改动", "确认没破坏", "保证通过", "测试是否通过", "回归验证",
+            "修复后验证", "确保正确", "检查是否正常", "测试失败",
+            "检验结果", "验证通过",
+            "test", "pytest", "unittest", "verify", "regression",
         ],
     ),
     ToolDefinition(
@@ -388,8 +424,9 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="check_syntax",
         search_hints=[
-            "语法错误", "语法检查", "编译检查", "能否运行", "解析失败",
-            "静态检查", "代码检查", "缩进错误",
+            "语法", "语法检查", "编译检查", "静态检查", "检查语法", "语法错误",
+            "能否运行", "缩进问题", "导入错误", "代码检查", "解析失败",
+            "syntax", "compile", "lint", "check", "parse",
         ],
     ),
 
@@ -401,8 +438,10 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         parameters={"type": "object", "properties": {}, "required": []},
         function_name="git_status",
         search_hints=[
-            "工作区状态", "改了哪些文件", "变更清单", "未提交", "待提交",
-            "有什么改动", "修改记录",
+            "工作区状态", "查看状态", "改动清单", "变更清单", "改了哪些文件",
+            "文件变更", "未提交", "待提交", "修改记录",
+            "工作区", "仓库状态",
+            "git status", "changed files", "working tree", "staged",
         ],
     ),
     ToolDefinition(
@@ -418,8 +457,9 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="git_diff",
         search_hints=[
-            "差异", "对比改动", "改了什么", "diff", "变化内容",
-            "前后对比", "代码变更",
+            "差异", "对比", "对比改动", "改了什么", "变化内容", "前后对比",
+            "代码变更", "查看具体改动",
+            "diff", "compare", "changes", "patch view",
         ],
     ),
     ToolDefinition(
@@ -437,8 +477,9 @@ EXAMPLE_TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
         function_name="run_command",
         search_hints=[
-            "命令行", "shell", "执行命令", "构建", "打包",
-            "脚本", "批处理", "跑一下命令",
+            "命令行", "shell", "执行命令", "运行命令", "构建", "安装",
+            "打包", "启动", "运行脚本", "批处理", "命令",
+            "command", "exec", "run", "build", "install",
         ],
     ),
 ]
