@@ -55,8 +55,7 @@ def _tokenize(text: str) -> List[str]:
             tokens.extend(part for part in word.split("_") if part)
 
     for segment in _CJK_PATTERN.findall(text):
-        tokens.extend(segment)  # 单字
-        tokens.extend(segment[index:index + 2] for index in range(len(segment) - 1))  # 双字
+        tokens.extend(segment[index:index + 2] for index in range(len(segment) - 1))
 
     return tokens
 
@@ -190,7 +189,7 @@ class TFIDFRetriever:
         parts = [
             definition.name,
             definition.category,
-            definition.description,
+            #definition.description,
         ]
         hints = getattr(definition, "search_hints", None) or []
         if hints:

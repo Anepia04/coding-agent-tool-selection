@@ -20,26 +20,31 @@ def build_mock_tools() -> list[ToolDefinition]:
             name="read_file",
             description="读取指定文件的内容，支持查看指定行区间的代码",
             category="file",
+            search_hints=["查看", "读取", "文件内容", "阅读代码"],
         ),
         ToolDefinition(
             name="write_file",
             description="创建或覆盖写入文件内容，用于修改代码",
             category="file",
+            search_hints=["新建文件", "写入", "修改代码"],
         ),
         ToolDefinition(
             name="run_tests",
             description="运行测试用例并返回测试通过或失败的结果",
             category="test",
+            search_hints=["运行测试", "跑测试", "测试通过"],
         ),
         ToolDefinition(
             name="search_code",
             description="在项目中搜索函数名、变量名或关键词",
             category="code_search",
+            search_hints=["搜索", "查找", "关键词"],
         ),
         ToolDefinition(
             name="git_diff",
             description="查看当前代码变更的差异内容",
             category="git",
+            search_hints=["差异", "对比改动", "改了什么"],
         ),
     ]
 
@@ -134,8 +139,11 @@ class TestTFIDFRetriever(unittest.TestCase):
 
     def test_chinese_tokenizer_outputs_char_ngrams(self) -> None:
         tokens = _tokenize("运行测试 run_tests")
-        for expected in ("运", "运行", "测试", "run_tests", "run", "tests"):
+        for expected in ("运行", "测试", "run_tests", "run", "tests"):
             self.assertIn(expected, tokens)
+        # 中文只输出双字：单字不出现，避免「清除→除零」「差异→异常」这类碎片误匹配
+        self.assertNotIn("运", tokens)
+        self.assertNotIn("试", tokens)
 
     def test_retrieve_with_chinese_query(self) -> None:
         self.retriever.fit(self.tools)
