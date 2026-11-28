@@ -1,0 +1,39 @@
+--- a/calculator.py
++++ b/calculator.py
+@@ -6,12 +6,9 @@
+ def add(a: float, b: float) -> float:
+     """返回两数之和。"""
+-    print("add called", a, b)
+     result = a + b
+-    print("add result", result)
+     return result
+ 
+ 
+ def divide(a: float, b: float) -> float:
+     """返回 a 除以 b 的结果。"""
+-    print("divide called")
+     return a / b
+--- a/text_utils.py
++++ b/text_utils.py
+@@ -6,10 +6,8 @@
+ def normalize(text: str) -> str:
+     """合并连续空白。"""
+-    print("normalize input", repr(text))
+     return " ".join(text.split())
+ 
+ 
+ def truncate(text: str, limit: int) -> str:
+     """截断文本。"""
+-    print("truncate limit", limit)
+     return text if len(text) <= limit else text[:limit] + "..."
+--- a/parsers.py
++++ b/parsers.py
+@@ -6,8 +6,6 @@
+ def parse_int(text: str, default: int = 0) -> int:
+     """解析整数，失败回退默认值。"""
+-    print("parse_int", text)
+     try:
+         return int(text.strip())
+     except (AttributeError, ValueError):
+-        print("parse_int fallback")
+         return default

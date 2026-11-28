@@ -1,4 +1,4 @@
-"""文本工具（残留调试输出）。"""
+"""文本工具。"""
 
 from __future__ import annotations
 

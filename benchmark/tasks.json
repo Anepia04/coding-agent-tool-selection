@@ -201,13 +201,13 @@
   },
   {
     "task_id": "task_019",
-    "description": "sample_project 交付前需要清理调试代码：把散落在多个文件里的 print 调试输出全部移除，一次性完成且不遗漏任何一处。",
+    "description": "sample_project 收到上游维护者提供的一份统一 diff 补丁 fix.patch：先阅读补丁确认它改动哪些文件、改了什么，再把补丁完整应用到源码，最后运行测试确认行为未被破坏。",
     "project_path": "benchmark/workspaces/task_019",
     "language": "python",
     "task_type": "refactor",
     "complexity": "medium",
-    "success_criteria": "源码中不再有 print 调试调用；改动以补丁形式一次成批完成；全部测试通过。",
-    "retrieval_query": "sample_project print 调试输出 清理 搜索 定位 读取文件 移除语句 修改代码 语法验证 检查覆盖",
+    "success_criteria": "fix.patch 被完整应用到源码，涉及的三个文件都已更新；源码中不再残留调试 print 调用；全部测试通过。",
+    "retrieval_query": "补丁 文件 阅读 审查 应用 批量 多处 修改 代码 运行 测试 验证",
     "negative_constraints": []
   },
   {

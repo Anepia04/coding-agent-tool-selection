@@ -1,4 +1,4 @@
-"""极简计算器（残留调试输出）。"""
+"""极简计算器。"""
 
 from __future__ import annotations
 

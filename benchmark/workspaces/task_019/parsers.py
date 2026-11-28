@@ -1,4 +1,4 @@
-"""参数解析工具（残留调试输出）。"""
+"""参数解析工具。"""
 
 from __future__ import annotations
 
