@@ -57,7 +57,7 @@
   {
     "task_id": "task_006",
     "description": "定位并修复 sample_project 中空列表输入导致的索引越界异常（输入为空时应返回空结果而不是报错），并补充覆盖空输入的测试、保证全部用例通过。",
-    "project_path": "benchmark/workspaces/task_007",
+    "project_path": "benchmark/workspaces/task_006",
     "language": "python",
     "task_type": "bug_fix",
     "complexity": "medium",
@@ -68,7 +68,7 @@
   {
     "task_id": "task_007",
     "description": "为 sample_project 的配置加载函数增加参数校验：类型不符或取值为空时抛出带说明的 ValueError，并补充覆盖该场景的单元测试。",
-    "project_path": "benchmark/workspaces/task_008",
+    "project_path": "benchmark/workspaces/task_007",
     "language": "python",
     "task_type": "feature_add",
     "complexity": "medium",
@@ -79,7 +79,7 @@
   {
     "task_id": "task_008",
     "description": "先查找 sample_project 中三处重复的取值转换逻辑，再将其合并为一个公共函数并替换原有调用，改完后运行测试确认行为不变。",
-    "project_path": "benchmark/workspaces/task_009",
+    "project_path": "benchmark/workspaces/task_008",
     "language": "python",
     "task_type": "refactor",
     "complexity": "medium",
@@ -90,7 +90,7 @@
   {
     "task_id": "task_009",
     "description": "统一 sample_project 中数据加载函数与调用方之间的参数命名与顺序不一致问题：先定位函数签名与所有调用方，再逐处对齐（涉及多个文件），对齐后运行全部测试确认不再出现位置参数错位。",
-    "project_path": "benchmark/workspaces/task_010",
+    "project_path": "benchmark/workspaces/task_009",
     "language": "python",
     "task_type": "bug_fix",
     "complexity": "complex",
@@ -101,7 +101,7 @@
   {
     "task_id": "task_010",
     "description": "把 sample_project 中过长的 utils 模块拆分为 text_utils 与 num_utils 两个模块，更新导入路径，并运行测试确认导入与行为均未被破坏。",
-    "project_path": "benchmark/workspaces/task_011",
+    "project_path": "benchmark/workspaces/task_010",
     "language": "python",
     "task_type": "refactor",
     "complexity": "complex",
@@ -112,7 +112,7 @@
   {
     "task_id": "task_011",
     "description": "查找 sample_project 中尚未被测试覆盖的异常分支，并为其补充单元测试，不修改被测代码。",
-    "project_path": "benchmark/workspaces/task_012",
+    "project_path": "benchmark/workspaces/task_011",
     "language": "python",
     "task_type": "test_write",
     "complexity": "medium",
@@ -125,7 +125,7 @@
   {
     "task_id": "task_012",
     "description": "更新 sample_project 的 README：先列出并核对实际项目结构与测试目录，使 README 中的测试运行命令与之一致。",
-    "project_path": "benchmark/workspaces/task_013",
+    "project_path": "benchmark/workspaces/task_012",
     "language": "python",
     "task_type": "doc",
     "complexity": "medium",
@@ -136,7 +136,7 @@
   {
     "task_id": "task_013",
     "description": "清理 sample_project 中标记为 TODO/FIXME 的废弃代码路径，定位并删除不再被调用的函数，删除后运行测试确认无残留引用。",
-    "project_path": "benchmark/workspaces/task_016",
+    "project_path": "benchmark/workspaces/task_013",
     "language": "python",
     "task_type": "refactor",
     "complexity": "medium",
@@ -147,7 +147,7 @@
   {
     "task_id": "task_014",
     "description": "先了解 sample_project 的项目结构，再新增 cache 模块（简单的字典缓存）并接入数据加载流程使其生效，同时补充测试验证缓存命中且原有行为不变。",
-    "project_path": "benchmark/workspaces/task_017",
+    "project_path": "benchmark/workspaces/task_014",
     "language": "python",
     "task_type": "feature_add",
     "complexity": "complex",
@@ -158,7 +158,7 @@
   {
     "task_id": "task_015",
     "description": "定位并修复 sample_project 中字符串处理函数对非 ASCII 输入返回乱码的问题，并补充覆盖非 ASCII 输入的测试。",
-    "project_path": "benchmark/workspaces/task_018",
+    "project_path": "benchmark/workspaces/task_015",
     "language": "python",
     "task_type": "bug_fix",
     "complexity": "medium",
@@ -169,7 +169,7 @@
   {
     "task_id": "task_016",
     "description": "为 sample_project 的公共接口补全类型注解：先定位全部公共函数，再保证语法检查与现有测试通过。",
-    "project_path": "benchmark/workspaces/task_020",
+    "project_path": "benchmark/workspaces/task_016",
     "language": "python",
     "task_type": "doc",
     "complexity": "complex",
@@ -180,7 +180,7 @@
   {
     "task_id": "task_017",
     "description": "检查 sample_project 工作区的当前状态：列出被修改、新增和删除的文件，确认是否存在未跟踪的临时文件或误提交的构建产物，整理成一份待处理清单。",
-    "project_path": "benchmark/workspaces/task_021",
+    "project_path": "benchmark/workspaces/task_017",
     "language": "python",
     "task_type": "doc",
     "complexity": "simple",
@@ -191,7 +191,7 @@
   {
     "task_id": "task_018",
     "description": "统计 sample_project 中所有源码文件的行数与体积，找出规模最大的三个文件，判断它们是否已经过大、应当拆分，并说明理由。",
-    "project_path": "benchmark/workspaces/task_022",
+    "project_path": "benchmark/workspaces/task_018",
     "language": "python",
     "task_type": "doc",
     "complexity": "medium",
@@ -202,7 +202,7 @@
   {
     "task_id": "task_019",
     "description": "sample_project 交付前需要清理调试代码：把散落在多个文件里的 print 调试输出全部移除，一次性完成且不遗漏任何一处。",
-    "project_path": "benchmark/workspaces/task_023",
+    "project_path": "benchmark/workspaces/task_019",
     "language": "python",
     "task_type": "refactor",
     "complexity": "medium",
@@ -213,7 +213,7 @@
   {
     "task_id": "task_020",
     "description": "sample_project 的测试文件目前散落在项目根目录，需要全部移动到 tests/ 目录下，并同步更新导入路径与测试运行配置。",
-    "project_path": "benchmark/workspaces/task_024",
+    "project_path": "benchmark/workspaces/task_020",
     "language": "python",
     "task_type": "refactor",
     "complexity": "medium",
@@ -224,7 +224,7 @@
   {
     "task_id": "task_021",
     "description": "为 sample_project 引入 flake8 代码风格检查：安装工具、生成配置文件，然后扫描全项目并修复所有被报告的问题，直到检查零告警。",
-    "project_path": "benchmark/workspaces/task_025",
+    "project_path": "benchmark/workspaces/task_021",
     "language": "python",
     "task_type": "refactor",
     "complexity": "medium",
@@ -235,7 +235,7 @@
   {
     "task_id": "task_022",
     "description": "复核 sample_project 尚未提交的代码差异：逐处确认改动是否符合预期，是否混入了无关修改或遗留的调试代码。",
-    "project_path": "benchmark/workspaces/task_026",
+    "project_path": "benchmark/workspaces/task_022",
     "language": "python",
     "task_type": "doc",
     "complexity": "medium",
