@@ -26,8 +26,8 @@ Coding Agent 通常把全部工具 schema 随每轮请求发送给模型。工�
 
 | 状态 | 内容 |
 |---|---|
-| 已完成 | Agent 框架（多轮 Function Calling）、LLMClient（OpenAI 兼容）、TaskAnalyzer（含结构化检索字段）、TF-IDF 检索、AdaptiveSelector、工具库与安全边界、任务预标注脚本、真实 Qwen 联调脚本、129 项单元测试 |
-| 待完成 | `experiments/` 三个实验入口与指标实现（成员 C）、Benchmark 任务扩充与预标注数据（成员 B）、结果统计与可视化（成员 D） |
+| 已完成 | Agent 框架（多轮 Function Calling）、LLMClient（OpenAI 兼容）、TaskAnalyzer（含结构化检索字段）、TF-IDF 检索、AdaptiveSelector、工具库与安全边界、任务预标注脚本、真实 Qwen 联调脚本、**三组实验入口 + 工作副本隔离 + 六项指标 + 结果落盘（成员 C）** |
+| 待完成 | Benchmark 任务扩充与预标注数据（成员 B，当前仅 task_001 工作区就绪）、正式对照实验运行（需 API Key 与 B 的数据）、结果统计与可视化（成员 D） |
 
 ---
 
@@ -59,10 +59,12 @@ coding-agent-tool-selection/
 │       └── task_003/          # 占位，待成员 B 填充
 │
 ├── experiments/               # 实验入口与评价（成员 C）
-│   ├── baseline.py            # run_baseline（待实现）
-│   ├── fixed_topk.py          # run_fixed_topk（待实现）
-│   ├── adaptive_topk.py       # run_adaptive_topk（待实现）
-│   ├── evaluate.py            # 指标接口（待实现）
+│   ├── baseline.py            # run_baseline：提供全部工具
+│   ├── fixed_topk.py          # run_fixed_topk：检索后固定取 K 个
+│   ├── adaptive_topk.py       # run_adaptive_topk：按复杂度动态确定 K
+│   ├── evaluate.py            # 六项指标 + 任务成功判定
+│   ├── workspace.py           # 工作副本复制 / 重置 / 改动快照 / 副本内测试
+│   ├── runner.py              # 对照实验编排、CSV 落盘、CLI 入口
 │   └── schemas.py             # ExperimentConfig / ExperimentResult
 │
 ├── results/                   # 实验结果（成员 D）
@@ -76,9 +78,10 @@ coding-agent-tool-selection/
 │   ├── test_qwen_api.py       # 真实 API 连通性冒烟
 │   └── test_qwen_agent.py     # 真实三种模式 Function Calling 联调
 │
-├── tests/                     # 单元测试（114 项）
+├── tests/                     # 单元测试（168 项）
 ├── docs/architecture.md       # 架构与接口契约
 ├── workspace/                 # 工具文件操作 / 命令执行的活动目录
+├── .experiment_workspaces/    # 实验工作副本（运行时生成，不进入版本库）
 │
 ├── config.py                  # 统一配置与 .env 加载
 ├── requirements.txt
@@ -210,7 +213,28 @@ py scripts/probe_retrieval.py         # 检索排名 / 召回 / 噪声诊断
 python -m unittest discover -s tests -v
 ```
 
-当前 129 项测试全部通过。
+当前 168 项测试全部通过（含 `tests/test_experiments.py` 的实验入口、指标、工作副本与编排落盘测试）。
+
+### 5.4 运行三组对照实验
+
+```bash
+# 全部任务 × 三种模式（需要 .env 中的 LLM_API_KEY）
+python -m experiments.runner
+
+# 只跑指定任务，重复 3 次，保留工作副本便于人工复核
+python -m experiments.runner --task-id task_001 --repeats 3 --keep-workspaces
+
+# 自定义 K 与轮数上限
+python -m experiments.runner --top-k 5 --max-steps 8
+```
+
+实验流程：复制 `benchmark/workspaces/<task_id>` 到 `.experiment_workspaces/<task_id>/<mode>_r<n>`
+→ 在副本上运行 Agent → 以「工作区确有改动 + 全部测试通过」判定任务成功 → 写出
+`results/raw_results.csv`（逐次运行）与 `results/summary.csv`（按模式聚合）。
+
+- 初始工作区尚未就绪的任务（只有 `.gitkeep` 占位）会被跳过并告警，不计入成功率；
+- 正式实验前先执行 `python scripts/preanalyze_tasks.py` 冻结 `retrieval_query`，保证三种模式共用同一份任务语义；
+- Expected Tools 只用于 Recall / Precision，不参与任务成功判定。
 
 ---
 
@@ -227,7 +251,7 @@ python -m unittest discover -s tests -v
 | `tools/definitions.py` | 工具元数据（模型描述 + 检索 hints） | 实现与注册 |
 | `tools/implementations.py` | 工具函数、路径围栏、命令白名单、输出截断 | 决定暴露哪些工具 |
 | `tools/registry.py` | 工具注册、查询、schema 转换、执行分发 | 工具业务逻辑 |
-| `experiments/` | 三组实验入口、指标计算、结果结构 | Agent 执行逻辑 |
+| `experiments/` | 三组实验入口、工作副本隔离、指标计算、结果落盘 | Agent 执行逻辑 |
 | `benchmark/` | 任务清单、初始工作区、Expected Tools 标注 | 实验执行 |
 | `results/` | 原始结果、汇总结果、图表 | 采集逻辑 |
 | `config.py` | 全局配置、`.env` 加载、路径常量 | 业务逻辑 |
@@ -256,9 +280,9 @@ python -m unittest discover -s tests -v
 | 阶段 | 工作内容 | 负责成员 |
 |---|---|---|
 | 1 | 补齐 20 个 Benchmark 任务、对应工作区与 Expected Tools；完成 task_002 / task_003 工作区 | B |
-| 2 | 实现 `run_baseline / run_fixed_topk / run_adaptive_topk`，接入工作区复制 / 重置 | C |
-| 3 | 实现 `evaluate.py` 六项指标（成功率、Token、耗时、调用次数、Recall、Precision） | C |
-| 4 | 运行正式三组对照实验，产出 `raw_results.csv` / `summary.csv` | C |
+| 2 | ✅ 已完成：`run_baseline / run_fixed_topk / run_adaptive_topk` + 工作副本复制 / 重置（`experiments/workspace.py`） | C |
+| 3 | ✅ 已完成：`evaluate.py` 六项指标（成功率、Token、耗时、调用次数、Recall、Precision）+ `runner.py` 编排与 CSV 落盘 | C |
+| 4 | 运行正式三组对照实验，产出 `raw_results.csv` / `summary.csv`（入口已就绪：`python -m experiments.runner`；阻塞于阶段 1 的任务数据与 API Key） | C |
 | 5 | 结果统计、图表、Demo 与汇报材料 | D |
 | 6 | 持续维护接口契约、检索效果调优（hints / 分词）、回归测试 | A |
 

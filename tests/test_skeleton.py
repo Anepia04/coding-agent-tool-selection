@@ -4,7 +4,7 @@
 1. 所有包与模块可以正常导入；
 2. 统一数据结构的字段、默认值与序列化可用；
 3. ToolRegistry 的注册 / 查询 / schema 转换可以正常工作；
-4. 所有未实现接口会抛出 NotImplementedError，而不是静默通过；
+4. 实验层接口已实现并可正常调用（详细行为见 tests/test_experiments.py）；
 5. benchmark 数据文件结构符合约定。
 
 运行方式（项目根目录）：
@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import config
 from agent.controller import AgentController, AgentRunResult, AgentStep
@@ -185,35 +186,32 @@ class TestFrameworkSkeleton(unittest.TestCase):
             configure_workspace(None)
 
     # ------------------------------------------------------------------
-    # 未实现接口必须明确报错
+    # 实验层接口（成员 C 已实现）
     # ------------------------------------------------------------------
 
-    def test_unimplemented_interfaces(self) -> None:
-        llm_client = LLMClient(model="dummy-model")
-        task_analyzer = TaskAnalyzer(llm_client=None)
-        registry = build_default_registry()
-        controller = AgentController(llm_client, task_analyzer, registry)
-        exp_result = ExperimentResult(task_id="task_001", experiment_mode="baseline")
+    def test_experiment_interfaces_are_implemented(self) -> None:
+        exp_result = ExperimentResult(
+            task_id="task_001", experiment_mode="baseline", task_success=True,
+            input_tokens=3, output_tokens=2, total_tokens=5,
+            execution_time=0.5, tool_call_count=1,
+        )
+        self.assertTrue(evaluate.evaluate_task_success(exp_result))
+        self.assertEqual(evaluate.calculate_token_usage(exp_result)["total_tokens"], 5)
+        self.assertEqual(evaluate.calculate_execution_time(exp_result), 0.5)
+        self.assertEqual(evaluate.calculate_tool_call_count(exp_result), 1)
+        self.assertEqual(evaluate.calculate_tool_recall(["a"], ["a"]), 1.0)
+        self.assertEqual(evaluate.calculate_tool_precision(["a"], ["a"]), 1.0)
 
-        cases = {
-            "run_baseline": lambda: baseline.run_baseline(controller, {"task_id": "task_001"}),
-            "run_fixed_topk": lambda: fixed_topk.run_fixed_topk(
-                controller, {"task_id": "task_001"}, top_k=3
-            ),
-            "run_adaptive_topk": lambda: adaptive_topk.run_adaptive_topk(
-                controller, {"task_id": "task_001"}
-            ),
-            "evaluate_task_success": lambda: evaluate.evaluate_task_success(exp_result),
-            "calculate_token_usage": lambda: evaluate.calculate_token_usage(exp_result),
-            "calculate_execution_time": lambda: evaluate.calculate_execution_time(exp_result),
-            "calculate_tool_call_count": lambda: evaluate.calculate_tool_call_count(exp_result),
-            "calculate_tool_recall": lambda: evaluate.calculate_tool_recall(["a"], ["a"]),
-            "calculate_tool_precision": lambda: evaluate.calculate_tool_precision(["a"], ["a"]),
-        }
-        for name, call in cases.items():
-            with self.subTest(interface=name):
-                with self.assertRaises(NotImplementedError):
-                    call()
+        # 三个入口只负责把模式与 K 交给 AgentController，执行逻辑不重复实现
+        agent = MagicMock()
+        agent.selector = None
+        task = {"task_id": "task_001"}
+        baseline.run_baseline(agent, task)
+        agent.run.assert_called_with(task, mode="baseline")
+        fixed_topk.run_fixed_topk(agent, task, top_k=3)
+        agent.run.assert_called_with(task, mode="fixed_topk")
+        adaptive_topk.run_adaptive_topk(agent, task)
+        agent.run.assert_called_with(task, mode="adaptive_topk")
 
     def test_controller_rejects_unknown_mode(self) -> None:
         controller = AgentController(LLMClient("dummy"), TaskAnalyzer(), build_default_registry())

@@ -13,8 +13,9 @@
                                │ 任务定义 / 初始代码
 ┌──────────────────────────────▼───────────────────────────────┐
 │ 实验层  experiments/                                          │
-│   run_baseline / run_fixed_topk / run_adaptive_topk（待实现）  │
-│   evaluate.py 指标接口（待实现） · schemas.py 结果结构         │
+│   runner.py 编排：工作副本 → 三模式 → 指标 → CSV              │
+│   run_baseline / run_fixed_topk / run_adaptive_topk           │
+│   evaluate.py 六项指标 · workspace.py 副本 · schemas.py 结构   │
 └──────────────────────────────┬───────────────────────────────┘
                                │ AgentController.run(task, mode, max_steps)
 ┌──────────────────────────────▼───────────────────────────────┐
@@ -53,7 +54,10 @@
 | `tools/definitions.py` | `ToolDefinition` 与 16 个工具元数据 | 不实现工具函数 |
 | `tools/implementations.py` | 工具函数、路径围栏、命令白名单、输出截断 | 不决定暴露哪些工具 |
 | `tools/registry.py` | 注册、查询、schema 生成、执行分发 | 参数业务校验由实现侧负责（当前为 TODO） |
-| `experiments/*.py` | 三组实验入口与指标 | 当前为接口占位，未实现 |
+| `experiments/baseline.py` 等 | 三个实验入口，只决定模式与 K，执行逻辑全部交给 Controller | 不实现 Agent 循环 |
+| `experiments/evaluate.py` | 六项指标与任务成功判定 | 不执行 Agent、不修改工作区 |
+| `experiments/workspace.py` | 工作副本复制 / 重置、改动快照、副本内测试执行 | 不决定成功标准 |
+| `experiments/runner.py` | 对照实验编排、结果聚合与 CSV 落盘、CLI | 不绕过 Controller 调用工具 |
 | `experiments/schemas.py` | `ExperimentConfig` / `ExperimentResult` / CSV 列 | 结构由 A 维护，C 使用 |
 | `benchmark/` | 任务、工作区、Expected Tools | 当前 3 条占位任务 |
 | `scripts/` | 检索诊断、任务预标注、真实 API 联调 | 手动执行，不进入 unittest |
@@ -216,17 +220,31 @@ ExperimentResult:
 ```
 
 `RESULT_CSV_FIELDS` 与 `ExperimentResult` 字段顺序一致，用于 `results/raw_results.csv`。
+落盘时 `selected_tools` 序列化为 JSON 数组字符串（读取时 `json.loads` 还原），`execution_time` 保留 4 位小数。
+
+Recall / Precision 与 `termination_reason` 不在 `ExperimentResult` 中（raw 列契约由 A 冻结），
+由 `experiments/runner.py` 的 `RunRecord` 承载，只进入 `summary.csv` 与日志。
+
+`summary.csv` 按实验模式聚合，列顺序见 `runner.SUMMARY_CSV_FIELDS`：
+
+```text
+experiment_mode, task_count, success_count, success_rate,
+avg_input_tokens, avg_output_tokens, avg_total_tokens,
+avg_execution_time, avg_tool_call_count, avg_selected_tools,
+avg_tool_recall, avg_tool_precision
+```
 
 ### 4.7 跨模块契约
 
 ```text
 AgentRunResult（运行期轨迹）
-  -> experiments 抽取：task_success / tokens / 耗时 / 调用次数 / selected_tools
-  -> ExperimentResult（可落盘结果）
-  -> results/raw_results.csv
+  -> experiments.evaluate 抽取：task_success / tokens / 耗时 / 调用次数 / selected_tools
+  -> ExperimentResult（可落盘结果）+ RunRecord（Recall / Precision / 终止原因）
+  -> results/raw_results.csv（逐次运行）
+  -> results/summary.csv（按模式聚合）
 ```
 
-`AgentRunResult.task_success` 与最终任务成功是两个概念：前者只看 Agent 流程是否报错，后者由 `experiments/evaluate.py` 结合 `success_criteria` / 测试结果判定。
+`AgentRunResult.task_success` 与最终任务成功是两个概念：前者只看 Agent 流程是否报错，后者由 `experiments/evaluate.py` 结合工作副本状态（改动 + 测试结果）判定。
 
 ---
 
@@ -325,20 +343,55 @@ class AgentController:
 
 ### 5.7 experiments
 
-当前为接口占位（`NotImplementedError`，待成员 C）：
+三个实验入口只决定「模式与 K」，执行逻辑全部由 `AgentController` 承担：
 
 ```python
 run_baseline(agent, task) -> AgentRunResult
 run_fixed_topk(agent, task, top_k=5) -> AgentRunResult
 run_adaptive_topk(agent, task) -> AgentRunResult
+```
 
+- `run_fixed_topk`：临时把 `agent.selector` 换成 `top_k` 生效的 `AdaptiveSelector`，运行结束（含异常）后恢复原对象，避免污染同一 agent 上的其他实验组；`top_k <= 0` 抛 `ValueError`；
+- `run_adaptive_topk`：不覆盖 K，实际 K 即 `len(result.selected_tools)`。
+
+指标接口（前四项同时接受 `AgentRunResult` 与 `ExperimentResult`）：
+
+```python
 evaluate_task_success(result, task=None) -> bool
-calculate_token_usage(result) -> dict[str, int]
+calculate_token_usage(result) -> dict[str, int]   # input / output / total
 calculate_execution_time(result) -> float
 calculate_tool_call_count(result) -> int
 calculate_tool_recall(selected_tools, expected_tools) -> float
 calculate_tool_precision(selected_tools, expected_tools) -> float
 ```
+
+`evaluate_task_success` 依次短路判定：
+
+1. 流程失败（`error_message` 非空 / `termination_reason == "error"` / `task_success` 为假）→ False；
+2. 未提供 `task` → 退化为流程级结论；
+3. 提供 `task` → 在待评价工作区（`task["workspace_dir"]`，缺省回退 `project_path`）上核验：
+   相对初始工作区**确有改动**，且**全部测试通过**（`run_tests` 的 `ok` 为真且 `no_tests_found` 为假）。
+
+`success_criteria` 中超出测试覆盖的语义要求（如「函数复杂度下降」）需人工复核。
+Expected Tools 只用于 Recall / Precision，**不参与成功判定**。
+
+空集合约定：`recall` 的 `expected_tools` 为空 → 1.0（无必需工具）；`precision` 的 `selected_tools` 为空 → 0.0（未提供工具）。
+
+编排与落盘接口（`experiments/runner.py`）：
+
+```python
+RunnerConfig(modes, top_k, max_steps, repeats, work_root, keep_workspaces,
+             tasks_file, expected_tools_file, raw_results_file, summary_file)
+run_experiment(config=None, agent=None, tasks=None, expected_tools=None) -> list[RunRecord]
+build_agent(settings=None, llm_client=None) -> AgentController
+load_tasks(path=None) -> list[dict]
+load_expected_tools(path=None) -> dict[str, dict]
+write_raw_results(records, path=None) -> Path
+write_summary(records, path=None) -> Path
+```
+
+命令行：`python -m experiments.runner [--modes ...] [--task-id ...] [--top-k N] [--max-steps N] [--repeats N] [--keep-workspaces]`，
+退出码 0 成功 / 2 缺少 API Key / 3 无可运行任务。
 
 ### 5.8 工具实现
 
@@ -388,6 +441,30 @@ get_schemas(selected) -> chat -> [执行 tool_calls -> 回填 -> chat] -> AgentR
 
 selected_tools、schema、循环轮数上限与结果记录方式完全一致，保证对照公平。
 
+### 编排流程（experiments/runner.py）
+
+```text
+run_experiment(config, agent, tasks, expected_tools)
+  -> load_tasks / load_expected_tools（未显式传入时）
+  -> 逐任务：
+       workspace_ready：初始工作区只有 .gitkeep 等占位时跳过并告警（不计入成功率）
+       _freeze_task：缺 retrieval_query 时只调用一次 TaskAnalyzer 补齐，
+                     三种模式与多次重复共用同一份任务语义
+  -> 逐「模式 × 重复序号」：
+       prepare_workspace：复制 benchmark/workspaces/<task_id> 到
+                          .experiment_workspaces/<task_id>/<mode>_r<n>（已存在先删除）
+       configure_workspace(副本)
+         -> run_baseline / run_fixed_topk / run_adaptive_topk
+       configure_workspace(None)
+       evaluate_task_success(run_result, task + workspace_dir=副本)
+       六项指标 -> ExperimentResult + RunRecord
+       默认删除副本（keep_workspaces=True 时保留供人工复核）
+  -> write_raw_results（逐次运行） / write_summary（按模式聚合）
+```
+
+`configure_workspace` 是**进程级**开关，因此实验串行执行；每次运行与每次评价都在
+`try/finally` 中取消覆盖（回到 config 配置），避免副本路径泄漏到后续任务。
+
 ---
 
 ## 7. 执行与终止语义
@@ -411,7 +488,7 @@ selected_tools、schema、循环轮数上限与结果记录方式完全一致，
 2. **命令执行默认关闭**：`AGENT_ALLOW_SHELL=false` 时 `run_command` 抛 `PermissionError`；开启后仅允许白名单程序，且不经过 shell 解析；
 3. **输出截断**：工具输出限制在 `MAX_TOOL_OUTPUT_CHARS`，避免撑爆上下文；
 4. **敏感环境隔离**：子进程不继承名称含 `API_KEY / TOKEN / SECRET / PASSWORD` 等变量；
-5. **工作副本**：实验层负责把 `benchmark/workspaces/<task_id>` 复制到独立目录后运行，避免组间污染。
+5. **工作副本**：实验层（`experiments/workspace.py`）把 `benchmark/workspaces/<task_id>` 复制到 `.experiment_workspaces/<task_id>/<mode>_r<n>` 后运行，避免组间污染；该目录为运行时产物，不进入版本库。
 
 ---
 
@@ -439,11 +516,12 @@ selected_tools、schema、循环轮数上限与结果记录方式完全一致，
 
 | 项目 | 状态 |
 |---|---|
-| 单元测试 | 129 项，`python -m unittest discover -s tests -v` 全部通过 |
-| 覆盖范围 | LLMClient（Mock）、TaskAnalyzer、TF-IDF、AdaptiveSelector、AgentController（单轮 / 多轮 / 异常）、Benchmark 结构、工具注册与 schema |
+| 单元测试 | 168 项，`python -m unittest discover -s tests -v` 全部通过 |
+| 覆盖范围 | LLMClient（Mock）、TaskAnalyzer、TF-IDF、AdaptiveSelector、AgentController（单轮 / 多轮 / 异常）、Benchmark 结构、工具注册与 schema、实验入口 / 六项指标 / 工作副本 / 编排落盘（`tests/test_experiments.py`） |
 | 真实 Qwen4-Max | 已完成文本调用与三种模式 Function Calling 冒烟（`scripts/test_qwen_api.py`、`scripts/test_qwen_agent.py`） |
 | 检索诊断 | `scripts/probe_retrieval.py`：排名、交集词、recall@K、跨工具噪声词 |
-| 实验入口 | 未实现（成员 C） |
-| 指标计算 | 未实现（成员 C） |
+| 实验入口 | 已实现（成员 C）：`run_baseline / run_fixed_topk / run_adaptive_topk` |
+| 指标计算 | 已实现（成员 C）：六项指标 + 基于工作副本的成功判定 |
+| 正式对照实验 | 待运行：入口为 `python -m experiments.runner`，阻塞于 Benchmark 任务扩充（B）与 `LLM_API_KEY` |
 
 真实 API 脚本手动执行、不进入 unittest；运行环境需可访问模型服务。

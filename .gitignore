@@ -24,5 +24,6 @@ Thumbs.db
 # ---------- 运行时产物 ----------
 *.log
 workspace/
+.experiment_workspaces/
 results/figures/*
 !results/figures/.gitkeep

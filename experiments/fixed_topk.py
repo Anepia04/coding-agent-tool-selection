@@ -8,7 +8,10 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Mapping
+
+from retrieval.adaptive_selector import AdaptiveSelector
 
 if TYPE_CHECKING:
     from agent.controller import AgentController, AgentRunResult
@@ -21,20 +24,32 @@ def run_fixed_topk(
 ) -> "AgentRunResult":
     """使用固定 Top-K 工具执行任务。
 
+    K 由本入口的参数决定：临时把 ``agent.selector`` 换成 ``top_k`` 生效的选择器，
+    运行结束后恢复原选择器，避免污染同一 agent 上的其他实验组。
+
     Args:
         agent: 已装配好 retriever / selector 的 AgentController。
         task: benchmark 任务字典。
-        top_k: 固定选择的工具数量。
+        top_k: 固定选择的工具数量，必须为正整数。
 
     Returns:
-        AgentRunResult: 执行结果。
+        AgentRunResult: 执行结果，``selected_tools`` 长度不超过 top_k。
 
     Raises:
-        NotImplementedError: 当前阶段未实现。
+        ValueError: top_k 非正整数，或 agent 缺少 retriever / selector。
     """
-    # TODO(成员 C)：调用 agent.run(task, mode="fixed_topk")，
-    # top_k 通过 selector.config / ExperimentConfig 传入并记录到结果中。
-    raise NotImplementedError("待成员 C 实现：run_fixed_topk Fixed Top-K 实验入口")
+    if top_k <= 0:
+        raise ValueError(f"top_k 必须为正整数，当前为 {top_k!r}")
+
+    selector = agent.selector
+    if selector is None or selector.config.top_k == top_k:
+        return agent.run(task, mode="fixed_topk")
+
+    agent.selector = AdaptiveSelector(replace(selector.config, top_k=top_k))
+    try:
+        return agent.run(task, mode="fixed_topk")
+    finally:
+        agent.selector = selector
 
 
 __all__ = ["run_fixed_topk"]

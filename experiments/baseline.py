@@ -20,19 +20,17 @@ def run_baseline(
 ) -> "AgentRunResult":
     """使用全部工具执行任务。
 
+    工具筛选完全由 ``AgentController`` 的 baseline 分支决定（即
+    ``ToolRegistry.tool_names``），本入口不额外干预，保证三种模式共用同一套执行逻辑。
+
     Args:
         agent: 已装配好的 AgentController。
-        task: benchmark 任务字典（见 benchmark/tasks.json）。
+        task: benchmark 任务字典（见 benchmark/tasks.json），也接受 TaskInfo 或字符串。
 
     Returns:
-        AgentRunResult: 执行结果。
-
-    Raises:
-        NotImplementedError: 当前阶段未实现。
+        AgentRunResult: 执行结果，``selected_tools`` 为工具库全部工具。
     """
-    # TODO(成员 C)：调用 agent.run(task, mode="baseline")，
-    # 并保证工具选择结果为 ToolRegistry 的全部工具。
-    raise NotImplementedError("待成员 C 实现：run_baseline Baseline 实验入口")
+    return agent.run(task, mode="baseline")
 
 
 __all__ = ["run_baseline"]
