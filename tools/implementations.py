@@ -121,6 +121,11 @@ def configure_workspace(path: Optional[str]) -> None:
     logger.debug("工具工作目录覆盖为: %s", _WORKSPACE_OVERRIDE)
 
 
+#: 兼容别名：测试与部分脚本使用 ``set_workspace_root`` 这个名称，
+#: 与 ``configure_workspace`` 是同一个函数，保留两个名字避免调用方导入失败。
+set_workspace_root = configure_workspace
+
+
 def _workspace_root(*, must_exist: bool = True) -> Path:
     """返回已解析的工作目录根，并按需校验其存在性。"""
     raw = _WORKSPACE_OVERRIDE if _WORKSPACE_OVERRIDE is not None else get_settings().agent.workspace_dir
@@ -1621,4 +1626,5 @@ __all__ = [
     "git_diff",
     "apply_patch",
     "configure_workspace",
+    "set_workspace_root",
 ]

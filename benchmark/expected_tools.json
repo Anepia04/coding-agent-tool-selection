@@ -1,17 +1,112 @@
 [
   {
     "task_id": "task_001",
-    "required_tools": ["read_file", "search_code", "write_file", "run_tests"],
-    "optional_tools": ["list_files", "git_diff"]
+    "required_tools": ["read_file", "edit_file", "run_tests"],
+    "optional_tools": ["search_code", "write_file", "list_files", "git_diff"]
   },
   {
     "task_id": "task_002",
-    "required_tools": ["read_file", "write_file", "run_tests"],
-    "optional_tools": ["list_files", "search_code", "git_diff"]
+    "required_tools": ["read_file", "edit_file", "run_tests"],
+    "optional_tools": ["write_file", "search_code", "list_files", "git_diff"]
   },
   {
     "task_id": "task_003",
+    "required_tools": ["read_file", "search_code", "edit_file", "run_tests"],
+    "optional_tools": ["find_symbol", "check_syntax", "list_files", "git_diff"]
+  },
+  {
+    "task_id": "task_004",
+    "required_tools": ["run_tests", "read_file", "search_code", "edit_file"],
+    "optional_tools": ["git_diff", "check_syntax", "file_info"]
+  },
+  {
+    "task_id": "task_005",
+    "required_tools": ["search_code", "delete_path", "edit_file", "run_tests"],
+    "optional_tools": ["read_file", "find_symbol", "git_status"]
+  },
+  {
+    "task_id": "task_006",
+    "required_tools": ["read_file", "search_code", "edit_file", "run_tests"],
+    "optional_tools": ["write_file", "git_diff", "check_syntax"]
+  },
+  {
+    "task_id": "task_007",
+    "required_tools": ["read_file", "edit_file", "run_tests"],
+    "optional_tools": ["check_syntax", "write_file"]
+  },
+  {
+    "task_id": "task_008",
+    "required_tools": ["read_file", "search_code", "edit_file", "run_tests"],
+    "optional_tools": ["find_symbol", "check_syntax"]
+  },
+  {
+    "task_id": "task_009",
+    "required_tools": ["read_file", "search_code", "find_symbol", "edit_file", "run_tests"],
+    "optional_tools": ["git_status", "git_diff"]
+  },
+  {
+    "task_id": "task_010",
+    "required_tools": ["read_file", "write_file", "edit_file", "run_tests"],
+    "optional_tools": ["list_files", "find_symbol", "search_code", "move_path", "check_syntax", "git_diff"]
+  },
+  {
+    "task_id": "task_011",
     "required_tools": ["read_file", "search_code", "write_file", "run_tests"],
-    "optional_tools": ["list_files", "git_diff", "run_command"]
+    "optional_tools": ["file_info", "check_syntax"]
+  },
+  {
+    "task_id": "task_012",
+    "required_tools": ["read_file", "list_files", "edit_file"],
+    "optional_tools": ["search_code", "run_tests"]
+  },
+  {
+    "task_id": "task_013",
+    "required_tools": ["list_todos", "search_code", "edit_file", "run_tests"],
+    "optional_tools": ["find_symbol", "delete_path"]
+  },
+  {
+    "task_id": "task_014",
+    "required_tools": ["read_file", "list_files", "write_file", "edit_file", "run_tests"],
+    "optional_tools": ["find_symbol", "check_syntax"]
+  },
+  {
+    "task_id": "task_015",
+    "required_tools": ["run_tests", "read_file", "search_code", "edit_file"],
+    "optional_tools": ["write_file", "git_diff", "check_syntax"]
+  },
+  {
+    "task_id": "task_016",
+    "required_tools": ["read_file", "find_symbol", "edit_file", "check_syntax", "run_tests"],
+    "optional_tools": ["list_files", "write_file"]
+  },
+  {
+    "task_id": "task_017",
+    "required_tools": ["git_status", "list_files", "read_file"],
+    "optional_tools": ["file_info", "git_diff"]
+  },
+  {
+    "task_id": "task_018",
+    "required_tools": ["list_files", "file_info", "read_file"],
+    "optional_tools": ["find_symbol", "check_syntax"]
+  },
+  {
+    "task_id": "task_019",
+    "required_tools": ["search_code", "apply_patch", "run_tests"],
+    "optional_tools": ["edit_file", "read_file", "list_files"]
+  },
+  {
+    "task_id": "task_020",
+    "required_tools": ["list_files", "move_path", "edit_file", "run_tests"],
+    "optional_tools": ["search_code", "read_file"]
+  },
+  {
+    "task_id": "task_021",
+    "required_tools": ["read_file", "write_file", "run_command", "edit_file", "run_tests"],
+    "optional_tools": ["check_syntax", "search_code"]
+  },
+  {
+    "task_id": "task_022",
+    "required_tools": ["git_diff", "read_file"],
+    "optional_tools": ["git_status", "search_code"]
   }
 ]

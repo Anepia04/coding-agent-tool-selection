@@ -21,26 +21,31 @@ def build_mock_tools() -> list[ToolDefinition]:
             name="read_file",
             description="读取指定文件的内容，支持查看指定行区间的代码",
             category="file",
+            search_hints=["查看", "读取", "文件内容", "阅读代码"],
         ),
         ToolDefinition(
             name="write_file",
             description="创建或覆盖写入文件内容，用于修改代码",
             category="file",
+            search_hints=["新建文件", "写入", "修改代码"],
         ),
         ToolDefinition(
             name="run_tests",
             description="运行测试用例并返回测试通过或失败的结果",
             category="test",
+            search_hints=["运行测试", "跑测试", "测试通过"],
         ),
         ToolDefinition(
             name="search_code",
             description="在项目中搜索函数名、变量名或关键词",
             category="code_search",
+            search_hints=["搜索", "查找", "关键词"],
         ),
         ToolDefinition(
             name="git_diff",
             description="查看当前代码变更的差异内容",
             category="git",
+            search_hints=["差异", "对比改动", "改了什么"],
         ),
     ]
 
@@ -135,8 +140,11 @@ class TestTFIDFRetriever(unittest.TestCase):
 
     def test_chinese_tokenizer_outputs_char_ngrams(self) -> None:
         tokens = _tokenize("运行测试 run_tests")
-        for expected in ("运", "运行", "测试", "run_tests", "run", "tests"):
+        for expected in ("运行", "测试", "run_tests", "run", "tests"):
             self.assertIn(expected, tokens)
+        # 中文只输出双字：单字不出现，避免「清除→除零」「差异→异常」这类碎片误匹配
+        self.assertNotIn("运", tokens)
+        self.assertNotIn("试", tokens)
 
     def test_retrieve_with_chinese_query(self) -> None:
         self.retriever.fit(self.tools)
@@ -269,6 +277,110 @@ class TestTFIDFRetriever(unittest.TestCase):
 
         self.assertEqual(results[0].tool_name, "read_file")
         self.assertNotIn("run_tests", [item.tool_name for item in results[:1]])
+
+
+class TestCaseInsensitiveMatching(unittest.TestCase):
+    """英文大小写归一化。
+
+    ``TF-IDF`` / ``Tf-Idf`` / ``tf-idf`` 表达同一个概念，``TEST`` / ``Test`` /
+    ``test`` 也是同一个词；检索时必须折叠成同一词项，否则任务里写 ``TODO`` 就
+    匹配不到 hints 里写的 ``todo``。
+    """
+
+    def setUp(self) -> None:
+        # hints 与 description 故意用混合大小写，顺带验证「文档侧」也被折叠
+        self.tools = [
+            ToolDefinition(
+                name="run_tests",
+                description="Run the Test Suite",
+                category="test",
+                search_hints=["Test", "PYTEST", "Run"],
+            ),
+            ToolDefinition(
+                name="git_diff",
+                description="Show Diff",
+                category="git",
+                search_hints=["Diff", "Changes"],
+            ),
+        ]
+        self.retriever = TFIDFRetriever().fit(self.tools)
+
+    def test_tokenize_folds_english_case(self) -> None:
+        # 连字符形式：tf/idf 是两个词项，大小写必须被抹平
+        for variant in ("TF-IDF", "Tf-Idf", "tf-idf", "tF-iDf"):
+            with self.subTest(variant=variant):
+                self.assertEqual(_tokenize(variant), ["tf", "idf"])
+        # 单词形式
+        for variant in ("TEST", "Test", "test", "TeSt"):
+            with self.subTest(variant=variant):
+                self.assertEqual(_tokenize(variant), ["test"])
+
+    def test_tokenize_folds_identifier_subwords(self) -> None:
+        for variant in ("Read_File", "READ_FILE", "read_file", "Read_file"):
+            with self.subTest(variant=variant):
+                self.assertEqual(_tokenize(variant), ["read_file", "read", "file"])
+
+    def test_vocabulary_contains_no_uppercase_terms(self) -> None:
+        vocabulary = list(self.retriever._vectorizer.get_feature_names_out())
+        self.assertTrue(vocabulary)
+        for term in vocabulary:
+            with self.subTest(term=term):
+                self.assertEqual(term, term.casefold())
+
+    def test_lowercase_query_hits_uppercase_hint(self) -> None:
+        results = self.retriever.retrieve("test pytest run")
+
+        self.assertEqual(results[0].tool_name, "run_tests")
+        self.assertGreater(results[0].score, 0.0)
+
+    def test_query_case_does_not_change_scores(self) -> None:
+        baseline = [
+            (item.tool_name, item.score)
+            for item in self.retriever.retrieve("TEST PYTEST RUN")
+        ]
+        # 确认基线本身匹配成功，避免「全 0 相等」的假通过
+        self.assertGreater(baseline[0][1], 0.0)
+
+        for query in ("test pytest run", "TeSt PyTeSt RuN", "tEsT pytest RUN"):
+            with self.subTest(query=query):
+                actual = [
+                    (item.tool_name, item.score)
+                    for item in self.retriever.retrieve(query)
+                ]
+                self.assertEqual(
+                    [name for name, _ in actual], [name for name, _ in baseline]
+                )
+                for (_, expected), (_, score) in zip(baseline, actual):
+                    self.assertAlmostEqual(score, expected, places=12)
+
+
+class TestLengthCompensation(unittest.TestCase):
+    """文档长度补偿：hints 条目多的工具不该被 l2 归一化摊薄到吃亏。"""
+
+    def test_factor_is_log_normalized(self) -> None:
+        retriever = TFIDFRetriever().fit(build_mock_tools())
+        factors = retriever._length_factor
+
+        # 最长文档的补偿因子为 1.0，其余按 log1p 比例下调
+        self.assertAlmostEqual(float(factors.max()), 1.0, places=12)
+        self.assertTrue(all(0.0 < float(f) <= 1.0 for f in factors))
+
+    def test_longer_document_gets_larger_factor(self) -> None:
+        tools = [
+            ToolDefinition(name="short", description="a", category="file",
+                           search_hints=["甲甲"]),
+            ToolDefinition(name="long", description="b", category="file",
+                           search_hints=["乙乙", "丙丙", "丁丁", "戊戊", "己己"]),
+        ]
+        retriever = TFIDFRetriever().fit(tools)
+        factors = dict(zip([t.name for t in tools], retriever._length_factor))
+        self.assertGreater(float(factors["long"]), float(factors["short"]))
+
+    def test_scores_stay_in_unit_interval(self) -> None:
+        retriever = TFIDFRetriever().fit(build_mock_tools())
+        for item in retriever.retrieve("读取文件内容 运行测试"):
+            self.assertGreaterEqual(item.score, 0.0)
+            self.assertLessEqual(item.score, 1.0)
 
 
 if __name__ == "__main__":

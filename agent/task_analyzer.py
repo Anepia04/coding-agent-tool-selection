@@ -35,7 +35,8 @@ JSON 字段要求：
 - "description": 对任务的一句话复述（字符串）；
 - "task_type": 任务类型，必须是以下之一：bug_fix（修复缺陷）、feature_add（新增功能）、refactor（重构）、test_write（编写测试）、doc（编写文档）；
 - "language": 任务主要涉及的编程语言（如 python），无法确定时输出 "unknown"；
-- "retrieval_query": 从任务描述中抽取的**正向**检索关键词，用空格分隔。只写任务要执行的动作和对象；
+- "retrieval_query": 从任务描述中抽取的**正向**检索关键词，用空格分隔，分析并提取任务执行的关键动作和对象。
+  然后推理完成任务的流程所需的全部动作，将每一步动作写入（如 修复代码问题 除了需要修改文件，也隐含读取文件的需求）；
   禁止出现「不要 / 禁止 / 无需」等否定词，禁止写工具名（如 read_file），否定要求放到 negative_constraints；
 - "negative_constraints": 字符串数组，任务明确禁止的操作，例如 ["不修改其他模块"]；没有则为 []；
 - "complexity": 任务复杂度，必须是以下之一：simple、medium、complex。

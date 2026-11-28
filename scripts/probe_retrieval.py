@@ -12,6 +12,14 @@
     py scripts/probe_retrieval.py --show-tokens        # 显示查询分词与交集词
     py scripts/probe_retrieval.py --noise              # 统计跨工具共享词（低区分度噪声）
     py scripts/probe_retrieval.py --extra-tools candidates.json           # 扩充工具池后对比
+
+每个任务的输出依次是：原始提示词、成功判据、检索查询、否定约束、必选工具，
+然后是每个工具的分数 / 交集数 / 交集词。
+
+把「原始提示词」和「检索查询」并排显示是有意为之：检索器只消费
+``retrieval_query``，但判断「查询漏词」时必须对照原文，才能分清是任务本身
+没提出该动作（如原文没写"测试"，但 success_criteria 要求测试通过），
+还是提取阶段把动作词漏掉了。
 """
 
 from __future__ import annotations
@@ -47,12 +55,26 @@ def setup_stdout() -> None:
 
 
 def cjk_tokens(text: str) -> Set[str]:
-    """只保留含汉字的 token，过滤英文与标点碎片。"""
+    """只保留含汉字的 token，过滤英文与标点碎片。
+
+    **仅用于 ``--noise`` 的低区分度词统计**：英文 hint 数量少、跨工具共享性低，
+    混进来会干扰判断。诊断交集请用 :func:`text_tokens`。
+    """
     return {
         token
         for token in _tokenize(text)
         if any(CJK_LO <= ch <= CJK_HI for ch in token)
     }
+
+
+def text_tokens(text: str) -> Set[str]:
+    """保留全部分词结果（中文 + 英文 + 标识符）。
+
+    诊断交集**必须**用它。英文 token 同样参与 TF-IDF 打分，之前这里误用了
+    :func:`cjk_tokens`，导致 ``todo`` / ``fixme`` / ``diff`` 这类命中被悄悄
+    过滤掉，看上去像「关键词根本没被扫出来」，实际是显示把证据藏了。
+    """
+    return set(_tokenize(text))
 
 
 #: 直接复用检索器的文档构建逻辑，**不要**在这里复制一份。
@@ -123,32 +145,55 @@ def analyze(
     required: Set[str],
     docs: Dict[str, Set[str]],
     show_tokens: bool,
+    description: str = "",
+    negative_constraints: Optional[List[str]] = None,
+    success_criteria: str = "",
 ) -> None:
+    """打印单个任务的诊断详情。
+
+    Args:
+        query: 实际用于检索的查询串（``retrieval_query``）。
+        description: 任务的**原始提示词**。它不参与检索（检索器只消费
+            ``retrieval_query``），但诊断时必须一起看，否则无法判断
+            「查询漏词」是任务本身没要求，还是提取时被漏掉了。
+        negative_constraints: 任务明确禁止的操作，供人工核对是否被清洗逻辑误伤。
+        success_criteria: 成功判据，常含 description 里没写但任务隐含要求的动作。
+    """
     info = TaskInfo(
         task_id="probe",
-        description=query,
+        description=description or query,
         retrieval_query=build_retrieval_query(query),
     )
     ranked = retriever.retrieve(info)
     names = [item.tool_name for item in ranked]
 
     print(f"\n=== {label} ===")
-    print(f"查询：{query}")
+    if description:
+        print(f"原始提示词：{description}")
+    if success_criteria:
+        print(f"成功判据　：{success_criteria}")
+    same_as_description = description and query.strip() == description.strip()
+    suffix = "  （任务未提供 retrieval_query，回退为原始提示词）" if same_as_description else ""
+    print(f"检索查询　：{query}{suffix}")
+    if negative_constraints:
+        print(f"否定约束　：{negative_constraints}")
     if required:
         print(f"必选工具（{len(required)} 个）：{sorted(required)}")
 
-    query_tokens = cjk_tokens(query)
+    query_tokens = text_tokens(query)
     if show_tokens:
-        print(f"查询中文 token（{len(query_tokens)} 个）：{sorted(query_tokens)}")
+        print(f"查询 token（{len(query_tokens)} 个，含英文）：{sorted(query_tokens)}")
 
     print(f"\n{'排名':<5}{'工具':<16}{'分数':<10}{'交集数':<8}交集词")
     print("-" * 78)
     for item in ranked:
         overlap = query_tokens & docs.get(item.tool_name, set())
         mark = "*" if item.tool_name in required else " "
+        shown = sorted(overlap)
+        detail = ", ".join(shown[:10]) + ("…" if len(shown) > 10 else "")
         print(
             f"{mark}{item.rank:<4}{item.tool_name:<16}{item.score:<10.4f}"
-            f"{len(overlap):<8}{', '.join(sorted(overlap)[:8])}"
+            f"{len(overlap):<8}{detail}"
         )
 
     if required:
@@ -179,7 +224,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"已从 {args.extra_tools} 载入 {len(extra)} 个候选工具")
         definitions = definitions + extra
 
-    docs = {definition.name: cjk_tokens(tool_document(definition)) for definition in definitions}
+    docs = {definition.name: text_tokens(tool_document(definition)) for definition in definitions}
     retriever = TFIDFRetriever().fit(definitions)
 
     if args.noise:
@@ -195,6 +240,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             set(),
             docs,
             args.show_tokens,
+            # 自定义查询没有原始提示词可对照
+            description="",
         )
         return 0
 
@@ -206,14 +253,20 @@ def main(argv: Optional[List[str]] = None) -> int:
             continue
         required = set(expected.get(task_id, {}).get("required_tools", []))
         label = f"任务 {task_id}（complexity={task.get('complexity')}）"
+        description = str(task.get("description") or "")
         analyze(
             label,
-            str(task.get("retrieval_query") or task.get("description", "")),
+            str(task.get("retrieval_query") or description),
             retriever,
             definitions,
             required,
             docs,
             args.show_tokens,
+            description=description,
+            negative_constraints=[
+                str(item) for item in (task.get("negative_constraints") or [])
+            ],
+            success_criteria=str(task.get("success_criteria") or ""),
         )
 
     return 0
